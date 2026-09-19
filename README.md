@@ -1,13 +1,15 @@
 # LittleApp
 
-เว็บแอพบันทึกการเทรดและพอร์ตสะสมส่วนตัว ด้วย HTML, CSS และ JavaScript ล้วน พร้อมนำเข้า GitHub และ deploy บน Vercel ไม่ต้องติดตั้งแพ็กเกจ ไม่ต้องใช้ API key หรือฐานข้อมูล
+เว็บแอพบันทึกการเทรดและพอร์ตสะสมส่วนตัว ด้วย HTML, CSS และ JavaScript พร้อมระบบล็อกอินและฐานข้อมูล Supabase Free
+
+**เริ่มที่ [คู่มือเชื่อม Supabase](SUPABASE-SETUP.md)**: Run `supabase/schema.sql`, ตรวจค่าใน `dist/config.js`, สร้างผู้ใช้ แล้วอัปเดต GitHub เพื่อ deploy บน Vercel
 
 ## อัปโหลดเข้า GitHub
 
 1. แตกไฟล์ ZIP ที่ดาวน์โหลด
 2. สร้าง repository ใหม่บน GitHub เช่น `littleapp`
 3. เลือก **uploading an existing file** หรือ **Add file → Upload files**
-4. อัปโหลดโฟลเดอร์ `dist` พร้อม `vercel.json`, `README.md` และ `.gitignore` ไว้ที่ระดับบนสุดของ repository แล้วกด **Commit changes**
+4. อัปโหลดโฟลเดอร์ `dist`, `supabase` พร้อม `vercel.json`, `README.md`, `SUPABASE-SETUP.md` และ `.gitignore` ไว้ที่ระดับบนสุดของ repository แล้วกด **Commit changes**
 
 อย่าอัปโหลด ZIP โดยตรง และอย่าซ้อนทุกไฟล์ไว้ในโฟลเดอร์ LittleApp-GitHub อีกชั้น
 
@@ -18,7 +20,11 @@ littleapp/
 ├── dist/
 │   ├── index.html
 │   ├── style.css
-│   └── app.js
+│   ├── app.js
+│   └── config.js
+├── supabase/
+│   └── schema.sql
+├── SUPABASE-SETUP.md
 ├── vercel.json
 ├── .gitignore
 └── README.md
@@ -47,7 +53,7 @@ littleapp/
 
 ## ใช้งานในเครื่อง
 
-เปิด `dist/index.html` ในเบราว์เซอร์ได้โดยตรง โค้ดอยู่ใน `dist/app.js` และรูปแบบหน้าจออยู่ใน `dist/style.css`
+ใช้ผ่าน URL ของ Vercel หลังตั้งค่า Supabase แล้ว ระบบต้องใช้อินเทอร์เน็ต โค้ดอยู่ใน `dist/app.js` และรูปแบบหน้าจออยู่ใน `dist/style.css`
 
 ## ความสามารถและข้อมูล
 
@@ -55,7 +61,7 @@ littleapp/
 - สรุปกำไรขาดทุนหลังค่าธรรมเนียม อัตราชนะ และกราฟสะสม แยก USD / USDT / THB
 - บันทึกหุ้นไทย ทองคำแท่ง และบิทคอยน์ที่ยังถือครอง พร้อมต้นทุนและราคาประเมินที่กรอกเอง
 - ส่งออก/นำเข้าไฟล์สำรอง JSON
-- ข้อมูลอยู่ใน localStorage ของแต่ละเว็บไซต์และเบราว์เซอร์ ไม่ซิงก์ข้ามอุปกรณ์ และไม่ได้เก็บใน GitHub หรือ Vercel
+- ข้อมูลอยู่ใน Supabase แยกตามบัญชี โหลดเมื่อเข้าสู่ระบบหรือกดโหลดข้อมูลล่าสุด ไม่ใช่ realtime และไม่บันทึกแบบออฟไลน์
 - เมื่อต้องการย้ายจากไฟล์ในเครื่องไปยังเว็บ Vercel หรือเปลี่ยนโดเมน ให้สำรองข้อมูลจากที่เดิมแล้วนำเข้าที่ใหม่
 - พอร์ตสะสมยังไม่คำนวณประวัติขายหรือกำไรที่ขายแล้ว ใช้แก้ไขยอดถือครองเมื่อปรับพอร์ต
 - ฟิวเจอร์ใช้สูตร linear: (ราคาออก − ราคาเข้า) × จำนวน × ตัวคูณ × ทิศทาง − ค่าธรรมเนียม ตั้งตัวคูณตามสัญญาของโบรกเกอร์ ไม่รองรับ inverse contract และไม่คำนวณ margin/liquidation

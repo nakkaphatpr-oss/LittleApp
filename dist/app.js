@@ -7,8 +7,100 @@ const date=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMont
 const pnl=t=>t.exit==null?null:(t.exit-t.entry)*t.quantity*t.multiplier*(t.side==='Short'?-1:1)-t.fee;
 function toast(s){$('#toast').textContent=s;$('#toast').style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').style.display='none',3500)}
 function valid(x){return x&&Array.isArray(x.trades)&&Array.isArray(x.holdings)&&x.trades.length+x.holdings.length<=10000&&[...x.trades,...x.holdings].every((r,i,a)=>r&&typeof r.id==='string'&&a.findIndex(v=>v.id===r.id)===i&&typeof r.note==='string'&&r.note.length<=3000&&currencies.includes(r.currency)&&/^\d{4}-\d{2}-\d{2}$/.test(r.date)&&Number.isFinite(r.quantity)&&r.quantity>0&&Number.isFinite(r.fee)&&r.fee>=0)&&x.trades.every(r=>['XAUUSD','BTCUSDT'].includes(r.asset)&&r.currency===(r.asset==='XAUUSD'?'USD':'USDT')&&['Long','Short'].includes(r.side)&&Number.isFinite(r.entry)&&r.entry>0&&Number.isFinite(r.multiplier)&&r.multiplier>0&&(r.exit===null||Number.isFinite(r.exit)&&r.exit>0)&&(r.exit===null||/^\d{4}-\d{2}-\d{2}$/.test(r.closeDate)&&r.closeDate>=r.date)&&Number.isFinite(pnl(r)??0))&&x.holdings.every(r=>['หุ้นไทย','ทองคำแท่ง','บิทคอยน์'].includes(r.asset)&&typeof r.symbol==='string'&&r.symbol.length<=30&&Number.isFinite(r.cost)&&r.cost>0&&Number.isFinite(r.current)&&r.current>=0&&Number.isFinite(r.current*r.quantity)&&Number.isFinite(r.cost*r.quantity+r.fee))}
-try{const raw=localStorage.getItem(KEY);if(raw){const parsed=JSON.parse(raw);if(!valid(parsed))throw Error();data=parsed}}catch{toast('อ่านข้อมูลเดิมไม่ได้ กรุณานำเข้าไฟล์สำรอง');$('#add').disabled=true;}
-function save(next){try{localStorage.setItem(KEY,JSON.stringify(next));data=next;render();return true}catch{toast('บันทึกไม่สำเร็จ พื้นที่จัดเก็บอาจเต็ม กรุณาสำรองข้อมูล');return false}}
+let cloud=null,cloudUser=null,cloudRevision=0,cloudReady=false,cloudBusy=false,cloudGeneration=0;
+function cloudStatus(message){$('#cloud-status').textContent=message}
+function resetCloudUser(user){
+  cloudGeneration++;cloudUser=user;cloudRevision=0;cloudReady=false;
+  data={trades:[],holdings:[]};$('#editor').close();render();
+  $('#app-shell').hidden=!user;$('#auth-screen').hidden=!!user;
+  $('#account-email').textContent=user?.email||'';
+}
+async function loadCloud(){
+  if(!cloudUser||cloudBusy)return;
+  const userId=cloudUser.id,generation=cloudGeneration;cloudReady=false;cloudBusy=true;
+  $('#sync').disabled=true;cloudStatus('กำลังโหลดข้อมูล…');
+  try{
+    const {data:row,error}=await cloud.from('littleapp_journals').select('payload,revision').eq('user_id',userId).maybeSingle();
+    if(generation!==cloudGeneration)return;
+    if(error)throw error;
+    const next=row?.payload||{trades:[],holdings:[]};
+    if(!valid(next))throw Error('INVALID_DATA');
+    data=next;cloudRevision=row?.revision||0;cloudReady=true;render();
+    cloudStatus('โหลดข้อมูลแล้ว · '+new Date().toLocaleTimeString('th-TH'));
+  }catch{
+    if(generation===cloudGeneration){cloudStatus('โหลดไม่สำเร็จ · ตรวจอินเทอร์เน็ตและการสร้างตาราง แล้วกดโหลดข้อมูลล่าสุด');toast('ยังโหลดข้อมูลไม่สำเร็จ จึงยังแก้ไขไม่ได้')}
+  }finally{cloudBusy=false;$('#sync').disabled=false;}
+}
+async function save(next){
+  if(!cloudUser||!cloudReady||cloudBusy){toast('กรุณาโหลดข้อมูลให้สำเร็จก่อนบันทึก');return false}
+  if(!valid(next)){toast('ข้อมูลไม่ถูกต้อง');return false}
+  const generation=cloudGeneration;cloudBusy=true;
+  $('#entry-form').inert=true;$('#app-shell').inert=true;cloudStatus('กำลังบันทึก…');
+  try{
+    const {data:revision,error}=await cloud.rpc('littleapp_save',{p_payload:next,p_revision:cloudRevision});
+    if(generation!==cloudGeneration)return false;
+    if(error)throw error;
+    if(!Number.isInteger(revision))throw Error('INVALID_REVISION');
+    cloudRevision=revision;data=next;render();cloudStatus('บันทึกออนไลน์แล้ว · '+new Date().toLocaleTimeString('th-TH'));return true;
+  }catch(error){
+    if(generation===cloudGeneration){
+      // A failed response can still mean a committed write. Require a fresh read before retrying.
+      cloudReady=false;
+      const conflict=String(error.message).includes('REVISION_CONFLICT');
+      const message=conflict?'มีการแก้ไขจากอุปกรณ์อื่น กรุณาคัดลอกข้อความที่ยังไม่บันทึก แล้วปิดฟอร์มและโหลดข้อมูลล่าสุด':'ยืนยันการบันทึกไม่ได้ กรุณาคัดลอกข้อความที่ยังไม่บันทึก แล้วปิดฟอร์มและโหลดข้อมูลล่าสุดเพื่อตรวจสอบ';
+      $('#form-error').textContent=message;cloudStatus(message);toast('ยังไม่ยืนยันว่าบันทึกสำเร็จ');
+    }
+    return false;
+  }finally{cloudBusy=false;$('#entry-form').inert=false;$('#app-shell').inert=false;}
+}
+async function initCloud(){
+  const config=window.LITTLEAPP_CONFIG||{};
+  if(!/^https:\/\/[^/]+\.supabase\.co\/?$/.test(config.supabaseUrl||'')||!config.supabasePublishableKey){
+    $('#auth-message').textContent='ยังไม่ได้ตั้งค่าการเชื่อมต่อ กรุณาใส่ Project URL และ Publishable key ใน config.js แล้ว deploy ใหม่';
+    $('#auth-form').querySelectorAll('button').forEach(b=>b.disabled=true);return;
+  }
+  if(!window.supabase){$('#auth-message').textContent='โหลดระบบเชื่อมต่อไม่ได้ กรุณาตรวจอินเทอร์เน็ตแล้วรีเฟรชหน้า';return}
+  cloud=window.supabase.createClient(config.supabaseUrl,config.supabasePublishableKey);
+  let authSequence=0;
+  cloud.auth.onAuthStateChange((event,session)=>{
+    // Do not call other Supabase APIs inside the auth callback lock.
+    const sequence=++authSequence;
+    setTimeout(async()=>{
+      if(sequence!==authSequence)return;
+      const user=session?.user||null;
+      if(user?.id===cloudUser?.id)return;
+      resetCloudUser(user);if(user)await loadCloud();
+    },0);
+  });
+  const {data:sessionData,error}=await cloud.auth.getSession();
+  if(error){$('#auth-message').textContent='อ่านสถานะเข้าสู่ระบบไม่สำเร็จ กรุณารีเฟรชหน้า';return}
+  if(sessionData.session?.user&&!cloudUser){resetCloudUser(sessionData.session.user);await loadCloud()}
+  async function authenticate(signup){
+    if(!$('#auth-form').reportValidity())return;
+    const email=$('#auth-email').value.trim(),password=$('#auth-password').value;
+    $('#auth-form').querySelectorAll('button').forEach(b=>b.disabled=true);
+    $('#auth-message').textContent=signup?'กำลังสมัครบัญชี…':'กำลังเข้าสู่ระบบ…';
+    try{
+      const result=signup?await cloud.auth.signUp({email,password}):await cloud.auth.signInWithPassword({email,password});
+      if(result.error)throw result.error;
+      $('#auth-password').value='';
+      $('#auth-message').textContent=signup?'หากสมัครได้ ระบบจะส่งอีเมลให้ยืนยัน จากนั้นกลับมาเข้าสู่ระบบ หากไม่พบอีเมลให้ตรวจโฟลเดอร์สแปม หรือใช้บัญชีที่สร้างไว้แล้ว':'เข้าสู่ระบบแล้ว';
+    }catch(error){
+      const code=error.code||'';
+      $('#auth-message').textContent=code==='email_not_confirmed'?'กรุณายืนยันอีเมลก่อนเข้าสู่ระบบ':code==='over_email_send_rate_limit'?'ส่งอีเมลเกินโควตาชั่วคราว กรุณารอแล้วลองใหม่':signup?'สมัครไม่สำเร็จ ตรวจการเปิดสมัครบัญชีและนโยบายรหัสผ่านใน Supabase':'เข้าสู่ระบบไม่สำเร็จ ตรวจอีเมล รหัสผ่าน และการเชื่อมต่อ';
+    }finally{$('#auth-form').querySelectorAll('button').forEach(b=>b.disabled=false)}
+  }
+  $('#auth-form').onsubmit=e=>{e.preventDefault();authenticate(false)};
+  $('#signup').onclick=()=>authenticate(true);
+  $('#signout').onclick=async()=>{
+    if(cloudBusy)return;$('#signout').disabled=true;
+    try{const {error}=await cloud.auth.signOut({scope:'local'});if(error)throw error;resetCloudUser(null);$('#auth-message').textContent='ออกจากระบบแล้ว'}
+    catch{toast('ออกจากระบบไม่สำเร็จ กรุณาลองอีกครั้ง')}
+    finally{$('#signout').disabled=false}
+  };
+  $('#sync').onclick=()=>loadCloud();
+}
+
 function stat(label,value,unit,sub,icon){return `<article class="stat"><div class="stat-label">${label}<span>${icon}</span></div><strong>${value}<em>${unit}</em></strong><small>${sub}</small></article>`}
 function render(){const ts=data.trades.filter(t=>t.currency===currency),closed=ts.filter(t=>t.exit!==null),hs=data.holdings.filter(h=>h.currency===currency);const total=closed.reduce((n,t)=>n+pnl(t),0),wins=closed.filter(t=>pnl(t)>0).length,cost=hs.reduce((n,h)=>n+h.quantity*h.cost+h.fee,0),value=hs.reduce((n,h)=>n+h.quantity*h.current,0);
  $('#stats').innerHTML=view==='portfolio'?stat('มูลค่าพอร์ต',money(value),currency,'ตามราคาล่าสุดที่คุณกรอก','◈')+stat('ต้นทุนรวม',money(cost),currency,'รวมค่าธรรมเนียมซื้อ','▤')+stat('กำไร / ขาดทุนที่ยังไม่ขาย',money(value-cost),currency,'ไม่รวมค่าธรรมเนียมขาย','↗')+stat('รายการสะสม',hs.length,'รายการ','สินทรัพย์ที่ถือครอง','◎'):stat('กำไร / ขาดทุนสุทธิ',money(total),currency,'รายการปิดแล้ว · หักค่าธรรมเนียม','↗')+stat('อัตราชนะ',closed.length?money(wins/closed.length*100):'—','%',`${wins} ชนะ จาก ${closed.length} รายการที่ปิดแล้ว`,'◎')+stat('การเทรดทั้งหมด',ts.length,'รายการ',`${ts.length-closed.length} เปิดอยู่ · ${closed.length} ปิดแล้ว`,'⇄')+stat('มูลค่าพอร์ตสะสม',money(value),currency,`${hs.length} รายการ · ตามราคาที่กรอก`,'◈');
@@ -17,12 +109,14 @@ function render(){const ts=data.trades.filter(t=>t.currency===currency),closed=t
  let rows=view==='portfolio'?hs:ts.filter(t=>$('#filter').value==='all'||t.asset===$('#filter').value);rows=[...rows].sort((a,b)=>b.date.localeCompare(a.date));if(view==='overview')rows=rows.slice(0,5);
  if(!rows.length){$('#records').innerHTML=`<div class="empty">${view==='portfolio'?'ยังไม่มีรายการสะสม':'ยังไม่มีบันทึกการเทรด'}ในสกุล ${currency}<p>เริ่มจากรายการแรก แล้วกลับมาทบทวนได้ทุกเมื่อ</p><button class="primary" id="empty-add">＋ ${view==='portfolio'?'เพิ่มสินทรัพย์':'บันทึกการเทรด'}</button></div>`;$('#empty-add').onclick=()=>openEditor();return}
  const portfolio=view==='portfolio';$('#records').innerHTML=`<div class="table-wrap"><table><thead><tr><th>สินทรัพย์ / วันที่</th>${portfolio?'<th>จำนวน</th><th>ต้นทุน / หน่วย</th><th>ราคาประเมิน / หน่วย</th><th>มูลค่า / กำไรขาดทุน</th>':'<th>ทิศทาง</th><th>ราคาเข้า → ออก</th><th>จำนวน × ตัวคูณ</th><th>กำไร / ขาดทุนสุทธิ</th>'}<th></th></tr></thead><tbody>${rows.map(r=>{const profit=portfolio?r.quantity*(r.current-r.cost)-r.fee:pnl(r);return `<tr><td><div class="asset-cell"><span class="coin ${r.asset.includes('BTC')||r.asset==='บิทคอยน์'?'btc':''}">${r.asset.includes('BTC')||r.asset==='บิทคอยน์'?'₿':r.asset==='หุ้นไทย'?'S':'Au'}</span><div><b>${esc(portfolio?r.symbol:r.asset)}</b><br><small class="muted">${esc(r.date)}${portfolio?' · '+esc(r.asset):''}</small></div></div></td>${portfolio?`<td>${r.quantity.toLocaleString('en-US',{maximumFractionDigits:8})}</td><td>${money(r.cost)}</td><td>${money(r.current)}</td><td>${money(r.current*r.quantity)}<br><small class="${profit>=0?'positive':'negative'}">${profit>=0?'+':''}${money(profit)}</small></td>`:`<td><span class="badge ${r.side==='Short'?'short':''}">${r.side}</span></td><td>${money(r.entry)} <span class="muted">→</span> ${r.exit===null?'—':money(r.exit)}</td><td>${r.quantity} × ${r.multiplier}</td><td class="${profit===null?'muted':profit>=0?'positive':'negative'}">${profit===null?'เปิดอยู่':(profit>=0?'+':'')+money(profit)}</td>`}<td><button class="row-action" data-edit="${esc(r.id)}">แก้ไข</button><button class="row-action" data-delete="${esc(r.id)}">ลบ</button></td></tr>${r.note?`<tr class="note-row"><td colspan="6">↳ ${esc(r.note)}</td></tr>`:''}`}).join('')}</tbody></table></div>${portfolio?'<p class="portfolio-note">จำนวน: หุ้นไทยเป็นหุ้น · ทองคำแท่งเป็นบาททองคำ · บิทคอยน์เป็น BTC</p>':''}`;
- $$('[data-edit]').forEach(b=>b.onclick=()=>openEditor(b.dataset.edit));$$('[data-delete]').forEach(b=>b.onclick=()=>{if(confirm('ลบรายการนี้หรือไม่?')){const k=portfolio?'holdings':'trades';if(save({...data,[k]:data[k].filter(r=>r.id!==b.dataset.delete)}))toast('ลบรายการแล้ว')}});
+ $$('[data-edit]').forEach(b=>b.onclick=()=>openEditor(b.dataset.edit));$$('[data-delete]').forEach(b=>b.onclick=async()=>{if(confirm('ลบรายการนี้หรือไม่?')){const k=portfolio?'holdings':'trades';if(await save({...data,[k]:data[k].filter(r=>r.id!==b.dataset.delete)}))toast('ลบรายการแล้ว')}});
 }
 function renderChart(closed){if(!closed.length){$('#chart').innerHTML='<div class="chart-empty"><strong>การเดินทางเริ่มที่การจดบันทึก</strong><p>ปิดการเทรดรายการแรก เพื่อเริ่มดูผลสะสม</p></div>';return}let sum=0;const vals=[0,...[...closed].sort((a,b)=>a.closeDate.localeCompare(b.closeDate)).map(t=>sum+=pnl(t))],min=Math.min(...vals),max=Math.max(...vals),range=max-min||1;const pts=vals.map((v,i)=>[70+i/(vals.length-1)*500,185-(v-min)/range*150]);$('#chart').innerHTML=`<svg viewBox="0 0 590 220" role="img" aria-label="กำไรสะสม ${money(sum)} ${currency}">${[0,.5,1].map(f=>`<line x1="70" x2="570" y1="${185-f*150}" y2="${185-f*150}" stroke="#edf0e9"/><text x="62" y="${190-f*150}" text-anchor="end" fill="#929d8b" font-size="11">${money(min+f*range)}</text>`).join('')}<path d="M${pts.map(p=>p.join(',')).join(' L')} L570,185 L70,185Z" fill="#edf5e5"/><polyline points="${pts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="#84a666" stroke-width="2.5"/><text x="70" y="213" fill="#929d8b" font-size="11">เริ่มต้น</text><text x="570" y="213" text-anchor="end" fill="#929d8b" font-size="11">${closed.length} รายการปิดแล้ว</text></svg>`}
 function switchView(v){view=v;$$('nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===v));$('#breadcrumb').textContent=v==='portfolio'?'พอร์ตสะสม':v==='journal'?'บันทึกการเทรด':'ภาพรวม';$('#page-title').textContent=v==='portfolio'?'สะสมวันนี้ เพื่อวันข้างหน้า.':v==='journal'?'ทุกการตัดสินใจ ควรได้ทบทวน.':'ทุกการเทรด มีเรื่องให้เรียนรู้.';$('#page-subtitle').textContent=v==='portfolio'?'หุ้นไทย ทองคำแท่ง และบิทคอยน์ ในพื้นที่เดียวกัน':'จดบันทึก ทบทวน และเติบโตไปกับพอร์ตของคุณ';$('#add').textContent=v==='portfolio'?'＋ เพิ่มสินทรัพย์':'＋ บันทึกการเทรด';render()}
 function field(label,name,type,value,extra=''){return `<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`}
 function select(label,name,options,value){return `<label>${label}<select name="${name}">${options.map(o=>`<option ${o===value?'selected':''}>${o}</option>`).join('')}</select></label>`}
-function openEditor(id){editing=id||null;const portfolio=view==='portfolio',r=(portfolio?data.holdings:data.trades).find(r=>r.id===id)||{};$('#form-title').textContent=(id?'แก้ไข':'บันทึก')+(portfolio?'สินทรัพย์สะสม':'การเทรด');$('#fields').innerHTML=select('สินทรัพย์','asset',portfolio?['หุ้นไทย','ทองคำแท่ง','บิทคอยน์']:['XAUUSD','BTCUSDT'],r.asset||(currency==='USDT'?'BTCUSDT':'XAUUSD'))+field(portfolio?'วันที่ซื้อ':'วันที่เปิด','date','date',r.date||date(),'required')+(portfolio?field('ชื่อหุ้น / สินทรัพย์','symbol','text',r.symbol||'','required maxlength="30" placeholder="เช่น PTT, ทองคำ 96.5%, BTC"')+select('สกุลเงิน','currency',currencies,r.currency||'THB')+field('จำนวน (หุ้น / บาททองคำ / BTC)','quantity','number',r.quantity??'','required min="0.00000001" step="any"')+field('ราคาซื้อ / หน่วย','cost','number',r.cost??'','required min="0.00000001" step="any"')+field('ราคาประเมินล่าสุด / หน่วย','current','number',r.current??'','required min="0" step="any"'):select('ทิศทาง','side',['Long','Short'],r.side||'Long')+field('จำนวน Lot / สัญญา','quantity','number',r.quantity??'','required min="0.00000001" step="any"')+field('ตัวคูณ: หน่วยต่อ Lot / สัญญา','multiplier','number',r.multiplier??1,'required min="0.00000001" step="any"')+field('ราคาเข้า','entry','number',r.entry??'','required min="0.00000001" step="any"')+field('ราคาออก (เว้นว่างถ้ายังเปิด)','exit','number',r.exit??'','min="0.00000001" step="any"')+field('วันที่ปิด','closeDate','date',r.closeDate||date()))+field('ค่าธรรมเนียมรวม (สกุลเดียวกับราคา)','fee','number',r.fee??0,'required min="0" step="any"');$('#entry-form').elements.note.value=r.note||'';$('#form-error').textContent='';$('#form-help').textContent=portfolio?'ราคาซื้อและราคาประเมินต้องใช้หน่วยและสกุลเงินเดียวกัน ข้อมูลนี้เป็นรายการสินทรัพย์ที่ยังถืออยู่':'กำไร = (ราคาออก − ราคาเข้า) × จำนวน × ตัวคูณ × ทิศทาง − ค่าธรรมเนียม · ตั้งตัวคูณให้ตรงกับสัญญาของโบรกเกอร์ เช่น 100 หาก 1 Lot เท่ากับ 100 ออนซ์ · XAUUSD ใช้ USD, BTCUSDT ใช้ USDT';$('#editor').showModal()}
-$('#entry-form').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target),r=Object.fromEntries(f),portfolio=view==='portfolio';r.id=editing||crypto.randomUUID();['quantity','fee',...(portfolio?['cost','current']:['entry','multiplier'])].forEach(k=>r[k]=Number(r[k]));if(!portfolio){r.exit=r.exit===''?null:Number(r.exit);r.currency=r.asset==='XAUUSD'?'USD':'USDT';if(r.exit!==null&&r.closeDate<r.date){$('#form-error').textContent='วันที่ปิดต้องไม่ก่อนวันที่เปิด';return}}const k=portfolio?'holdings':'trades',next={...data,[k]:editing?data[k].map(t=>t.id===editing?r:t):[...data[k],r]};if(!valid(next)){$('#form-error').textContent='กรุณาตรวจสอบข้อมูลและขนาดตัวเลขให้ถูกต้อง';return}if(save(next)){currency=r.currency;$$('[data-currency]').forEach(b=>b.classList.toggle('selected',b.dataset.currency===currency));$('#filter').value='all';render();$('#editor').close();toast('บันทึกเรียบร้อยแล้ว')}};
-$$('[data-view]').forEach(b=>b.onclick=()=>switchView(b.dataset.view));$$('[data-currency]').forEach(b=>b.onclick=()=>{currency=b.dataset.currency;$$('[data-currency]').forEach(x=>x.classList.toggle('selected',x===b));render()});$('#add').onclick=()=>openEditor();$('#filter').onchange=render;$('#close').onclick=$('#cancel').onclick=()=>$('#editor').close();$('#backup').onclick=()=>{const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`LittleApp-backup-${date()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('ส่งออกไฟล์สำรองแล้ว')};$('#restore').onchange=async e=>{try{const file=e.target.files[0];if(!file)return;if(file.size>10000000)throw Error();const next=JSON.parse(await file.text());if(!valid(next))throw Error();if(confirm(`นำเข้า ${next.trades.length} การเทรด และ ${next.holdings.length} รายการสะสม? ข้อมูลปัจจุบันจะถูกแทนที่`)&&save(next)){$('#add').disabled=false;toast('นำเข้าข้อมูลเรียบร้อย')}}catch{toast('ไฟล์ไม่ถูกต้อง กรุณาใช้ไฟล์สำรองจาก LittleApp')}finally{e.target.value=''}};$('#today').textContent=new Intl.DateTimeFormat('th-TH',{day:'numeric',month:'long',year:'numeric'}).format(new Date());render();
+function openEditor(id){if(!cloudUser||!cloudReady||cloudBusy){toast('กรุณารอโหลดข้อมูลให้สำเร็จก่อน');return}editing=id||null;const portfolio=view==='portfolio',r=(portfolio?data.holdings:data.trades).find(r=>r.id===id)||{};$('#form-title').textContent=(id?'แก้ไข':'บันทึก')+(portfolio?'สินทรัพย์สะสม':'การเทรด');$('#fields').innerHTML=select('สินทรัพย์','asset',portfolio?['หุ้นไทย','ทองคำแท่ง','บิทคอยน์']:['XAUUSD','BTCUSDT'],r.asset||(currency==='USDT'?'BTCUSDT':'XAUUSD'))+field(portfolio?'วันที่ซื้อ':'วันที่เปิด','date','date',r.date||date(),'required')+(portfolio?field('ชื่อหุ้น / สินทรัพย์','symbol','text',r.symbol||'','required maxlength="30" placeholder="เช่น PTT, ทองคำ 96.5%, BTC"')+select('สกุลเงิน','currency',currencies,r.currency||'THB')+field('จำนวน (หุ้น / บาททองคำ / BTC)','quantity','number',r.quantity??'','required min="0.00000001" step="any"')+field('ราคาซื้อ / หน่วย','cost','number',r.cost??'','required min="0.00000001" step="any"')+field('ราคาประเมินล่าสุด / หน่วย','current','number',r.current??'','required min="0" step="any"'):select('ทิศทาง','side',['Long','Short'],r.side||'Long')+field('จำนวน Lot / สัญญา','quantity','number',r.quantity??'','required min="0.00000001" step="any"')+field('ตัวคูณ: หน่วยต่อ Lot / สัญญา','multiplier','number',r.multiplier??1,'required min="0.00000001" step="any"')+field('ราคาเข้า','entry','number',r.entry??'','required min="0.00000001" step="any"')+field('ราคาออก (เว้นว่างถ้ายังเปิด)','exit','number',r.exit??'','min="0.00000001" step="any"')+field('วันที่ปิด','closeDate','date',r.closeDate||date()))+field('ค่าธรรมเนียมรวม (สกุลเดียวกับราคา)','fee','number',r.fee??0,'required min="0" step="any"');$('#entry-form').elements.note.value=r.note||'';$('#form-error').textContent='';$('#form-help').textContent=portfolio?'ราคาซื้อและราคาประเมินต้องใช้หน่วยและสกุลเงินเดียวกัน ข้อมูลนี้เป็นรายการสินทรัพย์ที่ยังถืออยู่':'กำไร = (ราคาออก − ราคาเข้า) × จำนวน × ตัวคูณ × ทิศทาง − ค่าธรรมเนียม · ตั้งตัวคูณให้ตรงกับสัญญาของโบรกเกอร์ เช่น 100 หาก 1 Lot เท่ากับ 100 ออนซ์ · XAUUSD ใช้ USD, BTCUSDT ใช้ USDT';$('#editor').showModal()}
+$('#entry-form').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),r=Object.fromEntries(f),portfolio=view==='portfolio';r.id=editing||crypto.randomUUID();['quantity','fee',...(portfolio?['cost','current']:['entry','multiplier'])].forEach(k=>r[k]=Number(r[k]));if(!portfolio){r.exit=r.exit===''?null:Number(r.exit);r.currency=r.asset==='XAUUSD'?'USD':'USDT';if(r.exit!==null&&r.closeDate<r.date){$('#form-error').textContent='วันที่ปิดต้องไม่ก่อนวันที่เปิด';return}}const k=portfolio?'holdings':'trades',next={...data,[k]:editing?data[k].map(t=>t.id===editing?r:t):[...data[k],r]};if(!valid(next)){$('#form-error').textContent='กรุณาตรวจสอบข้อมูลและขนาดตัวเลขให้ถูกต้อง';return}if(await save(next)){currency=r.currency;$$('[data-currency]').forEach(b=>b.classList.toggle('selected',b.dataset.currency===currency));$('#filter').value='all';render();$('#editor').close();toast('บันทึกเรียบร้อยแล้ว')}};
+$$('[data-view]').forEach(b=>b.onclick=()=>switchView(b.dataset.view));$$('[data-currency]').forEach(b=>b.onclick=()=>{currency=b.dataset.currency;$$('[data-currency]').forEach(x=>x.classList.toggle('selected',x===b));render()});$('#add').onclick=()=>openEditor();$('#filter').onchange=render;$('#close').onclick=$('#cancel').onclick=()=>$('#editor').close();$('#backup').onclick=()=>{const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`LittleApp-backup-${date()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('ส่งออกไฟล์สำรองแล้ว')};$('#restore').onchange=async e=>{try{const file=e.target.files[0];if(!file)return;if(file.size>10000000)throw Error();const next=JSON.parse(await file.text());if(!valid(next))throw Error();if(confirm(`นำเข้า ${next.trades.length} การเทรด และ ${next.holdings.length} รายการสะสม? ข้อมูลปัจจุบันจะถูกแทนที่`)&&await save(next)){$('#add').disabled=false;toast('นำเข้าข้อมูลเรียบร้อย')}}catch{toast('ไฟล์ไม่ถูกต้อง กรุณาใช้ไฟล์สำรองจาก LittleApp')}finally{e.target.value=''}};$('#today').textContent=new Intl.DateTimeFormat('th-TH',{day:'numeric',month:'long',year:'numeric'}).format(new Date());render();
+
+initCloud();
