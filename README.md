@@ -1,8 +1,8 @@
-# LittleApp v3
+# LittleApp v3.1
 
 เว็บแอพบันทึกการเทรดและพอร์ตสะสมส่วนตัว ด้วย HTML, CSS และ JavaScript พร้อมระบบล็อกอินและฐานข้อมูล Supabase Free
 
-**อัปเดตจากรุ่นเดิม:** อ่าน [คู่มือ v3](UPDATE-V3.md) ใช้ฐานข้อมูลเดิมได้ ไม่ต้อง Run SQL ใหม่
+**อัปเดตจากรุ่นเดิม:** อ่าน [คู่มือรวมแผนและบันทึก v3.1](UPDATE-V31.md) และ [คู่มือ v3](UPDATE-V3.md) ใช้ฐานข้อมูลเดิมได้ ไม่ต้อง Run SQL ใหม่
 
 **เริ่มที่ [คู่มือเชื่อม Supabase](SUPABASE-SETUP.md)**: Run `supabase/schema.sql`, ตรวจค่าใน `dist/config.js`, สร้างผู้ใช้ แล้วอัปเดต GitHub เพื่อ deploy บน Vercel
 
@@ -75,5 +75,6 @@ littleapp/
 ## การตรวจสอบชุดไฟล์
 
 ตรวจสอบ JavaScript syntax, JSON, ตำแหน่งไฟล์อ้างอิง และความครบถ้วนของ ZIP แล้ว การ deploy จริงต้องดำเนินการในบัญชี Vercel ของคุณตามขั้นตอนด้านบน
+
 
 
