@@ -1,0 +1,71 @@
+let analyticsPeriod='30D',analyticsAnchor=date(),analyticsType='Futures',analyticsSetup='all',analyticsQuery='';
+const beforeAnalyticsRender=render,beforeAnalyticsSwitch=switchView,beforeAnalyticsValid=valid,beforeAnalyticsOpen=openJournal,beforeAnalyticsBuild=JournalCore.build;
+valid=function(d){return beforeAnalyticsValid(d)&&[...d.trades,...listOfData(d,'plans'),...listOfData(d,'spotTransactions')].every(AnalyticsCore.metadata)};
+function listOfData(d,key){return d[key]||[]}
+JournalCore.build=function(d,f,context,id){
+  const next=beforeAnalyticsBuild(d,f,context,id);
+  if(!Object.hasOwn(f,'setup'))return next;
+  const extra=AnalyticsCore.fields(f);
+  const actual=['เปิดอยู่','ปิดแล้ว'].includes(f.state);
+  const trade=actual?next.trades.find(t=>t.id===context.tradeId)||next.trades.find(t=>!d.trades.some(old=>old.id===t.id)):null;
+  const planId=trade?.planId||context.planId;
+  const plan=next.plans.find(p=>p.id===planId)||(!actual?next.plans.find(p=>!listOfData(d,'plans').some(old=>old.id===p.id)):null);
+  if(trade)Object.assign(trade,extra);
+  if(plan){const {initialRisk,...planExtra}=extra;Object.assign(plan,planExtra)}
+  return next;
+};
+openJournal=function(kind,id){
+  beforeAnalyticsOpen(kind,id);if(!$('#journal-dialog').open)return;
+  const t=kind==='trade'?data.trades.find(t=>t.id===id):null,p=listOf('plans').find(p=>p.id===(kind==='plan'?id:t?.planId)),r={...p,...t};
+  $('#analytics-trade-fields').innerHTML=`<details ${r.setup||r.tags?.length||r.mistakeTags?.length||r.initialRisk?'open':''}><summary>Setup, ป้ายกำกับ และความเสี่ยงเริ่มต้น (R)</summary><div class="form-grid">${field('Setup เช่น Trend Pullback','setup','text',r.setup||'','maxlength="80" list="setup-suggestions"')}${field('Timeframe เช่น M15, H1, D1','timeframe','text',r.timeframe||'','maxlength="20"')}${field('Tag คั่นด้วยจุลภาค เช่น NFP, London','tags','text',(r.tags||[]).join(', '),'maxlength="820"')}${field('ข้อผิดพลาด คั่นด้วยจุลภาค เช่น FOMO, Move SL','mistakeTags','text',(r.mistakeTags||[]).join(', '),'maxlength="820"')}</div><datalist id="setup-suggestions">${[...new Set([...data.trades,...listOf('plans')].map(r=>r.setup).filter(Boolean))].map(s=>`<option value="${esc(s)}"></option>`).join('')}</datalist><div class="form-grid">${field('1R = วงเงินเสี่ยงเริ่มต้นของรายการจริง','initialRisk','number',t?.initialRisk??'','min="0.000000000001" step="any"')}</div><button type="button" id="derive-risk" class="text-button">คำนวณ 1R จากราคาเข้า จำนวนจริง และ SL ตามแผน</button><p>ใช้สกุลเงินผลกำไรของสัญญา (BTC สำหรับ Inverse) · R = กำไรสุทธิ ÷ วงเงินเสี่ยงเริ่มต้น · ไม่ใช่ Leverage หรือวงเงินสูงสุดตามแผน ค่าที่คำนวณจาก SL ไม่รวมค่าธรรมเนียม และจะไม่เปลี่ยนตาม SL ภายหลัง เว้นแต่คุณแก้เอง</p><p id="risk-feedback" role="status"></p></details>`;
+  $('#derive-risk').onclick=()=>{try{const f=journalValues();if(!['เปิดอยู่','ปิดแล้ว'].includes(f.state)||!f.planning)throw Error('ต้องมีข้อมูลเปิดจริงและแผน SL ก่อน');const risk=AnalyticsCore.stopRisk({asset:f.asset,side:f.side,entry:Number(f.entry),quantity:Number(f.quantity),multiplier:Number(f.multiplier)},Number(f.stop));$('#journal-form').elements.initialRisk.value=String(risk);$('#risk-feedback').textContent='คำนวณแล้ว ตรวจวงเงินเสี่ยงเริ่มต้นก่อนบันทึก'}catch(e){$('#risk-feedback').textContent=e.message}};
+  $('#journal-form').elements.initialRisk.dataset.asset=$('#journal-form').elements.asset.value;
+  $('#risk-feedback').textContent='วงเงิน 1R ใช้ '+JournalCore.unit($('#journal-form').elements.asset.value);
+};
+$('#journal-form').addEventListener('change',e=>{
+  if(e.target.name!=='asset')return;
+  const input=$('#journal-form').elements.initialRisk;if(!input)return;
+  if(input.dataset.asset!==e.target.value){input.value='';input.dataset.asset=e.target.value;$('#risk-feedback').textContent='เปลี่ยนสัญญาแล้ว กรุณาระบุ 1R ใหม่ในหน่วย '+JournalCore.unit(e.target.value)}
+});
+function analyticsRows(){
+  const [start,end]=AnalyticsCore.range(analyticsPeriod,analyticsAnchor),query=analyticsQuery.trim().toLocaleLowerCase();
+  return AnalyticsCore.records(data).filter(r=>shown(r)&&r.date>=start&&r.date<=end&&(analyticsType==='all'||r.source===analyticsType)&&(analyticsSetup==='all'||r.setup===analyticsSetup)&&(!query||[r.symbol||r.asset,r.setup,r.timeframe,r.note,...r.tags,...r.mistakeTags].join(' ').toLocaleLowerCase().includes(query)));
+}
+const metric=(n,unit=currency)=>n===null?'—':n===Infinity?'∞':money(n,unit);
+function metricCards(s){return stat('กำไรปิดแล้ว',metric(s.net),currency,`${s.count} รายการ · เสมอ ${s.breakeven}`,'✓')+stat('Win Rate',metric(s.winRate,'USD'),'%',`${s.wins} ชนะ / ${s.losses} แพ้ · รวมเสมอในฐาน`,'◎')+stat('Profit Factor',metric(s.profitFactor,'USD'),'','กำไรรวม ÷ ขาดทุนรวม · ∞ = ยังไม่มีผลขาดทุน','↗')+stat('Expectancy / รายการ',metric(s.expectancy),currency,'กำไรสุทธิ ÷ จำนวนรายการปิด','≈')+stat('Average R',metric(s.averageR,'USD'),'R',`มีข้อมูล R ${s.rCount}/${s.count} รายการ · รวม ${metric(s.totalR,'USD')} R`,'R');}
+function analyticsTable(groups){return groups.length?gridTable(['กลุ่ม','รายการ','กำไรสุทธิ','Win Rate','Profit Factor','Avg R / ครอบคลุม'],groups.map(g=>`<tr><td>${esc(g.name)}</td><td>${g.count}</td><td>${signed(g.net)}</td><td>${metric(g.winRate,'USD')}%</td><td>${metric(g.profitFactor,'USD')}</td><td>${metric(g.averageR,'USD')} R<br><small>${g.rCount}/${g.count}</small></td></tr>`)):'<p class="empty">ยังไม่มีข้อมูลในช่วงและตัวกรองนี้</p>'}
+function analyticsChart(curve){
+  if(!curve.length)return '<p class="empty">ยังไม่มีผลปิดสำหรับสร้างกราฟ</p>';
+  const values=[0,...curve.map(p=>p.cumulative),...curve.map(p=>-p.drawdown)],min=Math.min(...values),max=Math.max(...values),span=max-min||1;
+  const x=i=>65+i/Math.max(1,curve.length)*615,y=n=>210-(n-min)/span*170;
+  const points=key=>[[x(0),y(0)],...curve.map((r,i)=>[x(i+1),y(key==='cumulative'?r.cumulative:-r.drawdown)])].map(p=>p.join(',')).join(' ');
+  return `<svg class="analytics-chart" viewBox="0 0 720 260" role="img" aria-label="กราฟกำไรปิดสะสมและ Drawdown สิ้นวันในช่วงที่เลือก"><line x1="65" y1="${y(0)}" x2="680" y2="${y(0)}" stroke="#ced8cf"/><polyline points="${points('cumulative')}" fill="none" stroke="#285545" stroke-width="3"/><polyline points="${points('drawdown')}" fill="none" stroke="#b26a5b" stroke-width="2"/><text x="5" y="35">${metric(max)}</text><text x="5" y="220">${metric(min)}</text><text x="65" y="247">${curve[0].date}</text><text x="680" y="247" text-anchor="end">${curve.at(-1).date}</text></svg><p>เขียว: กำไรปิดสะสม · น้ำตาล: Drawdown สิ้นวัน (${currency}) · เริ่มสะสมใหม่จากศูนย์ตามช่วงที่เลือก ไม่ใช่ Balance/Equity ของบัญชี</p>`;
+}
+function reviewText(rows,start,end){
+  const s=AnalyticsCore.summarize(rows),setups=AnalyticsCore.groups(rows.filter(r=>r.setup!=='ยังไม่ระบุ'),'setup'),mistakes=AnalyticsCore.groups(rows,'mistakeTags',true).sort((a,b)=>a.net-b.net);
+  return `สรุปผล ${start} ถึง ${end}\nพอร์ต: ${$('#account-filter').value==='all'?'ทุกพอร์ต':accountName($('#account-filter').value)} · กลยุทธ์: ${$('#strategy-filter').value==='all'?'ทุกกลยุทธ์':$('#strategy-filter').value}\nสกุลเงิน: ${currency} · ประเภท: ${analyticsType==='all'?'Futures + รายการขาย Spot':analyticsType} · Setup: ${analyticsSetup==='all'?'ทั้งหมด':analyticsSetup} · ค้นหา: ${analyticsQuery||'—'}\nรายการปิด/ขาย ${s.count} · ชนะ ${s.wins} · แพ้ ${s.losses} · เสมอ ${s.breakeven}\nกำไรสุทธิ ${metric(s.net)} ${currency}\nWin Rate ${metric(s.winRate,'USD')}% · Profit Factor ${metric(s.profitFactor,'USD')}\nExpectancy ${metric(s.expectancy)} ${currency}/รายการ\nTotal R ${metric(s.totalR,'USD')} · Average R ${metric(s.averageR,'USD')} · มี R ${s.rCount}/${s.count} รายการ\nMax Drawdown ของกำไรปิดสะสมสิ้นวัน ${metric(s.maxDrawdown)} ${currency}\n${setups.length?'Setup ที่มีกำไรสุทธิสูงสุดในชุดนี้: '+setups[0].name+' ('+setups[0].count+' รายการ, '+metric(setups[0].net)+' '+currency+')':'ยังไม่มี Setup ที่บันทึกไว้'}\n${mistakes.length?'กลุ่มข้อผิดพลาดที่มีกำไรสุทธิต่ำสุด: '+mistakes[0].name+' ('+mistakes[0].count+' รายการ, '+metric(mistakes[0].net)+' '+currency+')':'ยังไม่มีป้ายข้อผิดพลาดในชุดนี้'}\n\nข้อสังเกต: ผลตามป้ายคือผลของรายการที่ติดป้ายนั้น ไม่ได้พิสูจน์ว่าขาดทุนเพราะป้าย และหนึ่งรายการอาจอยู่หลายกลุ่ม\nจำนวนตัวอย่างน้อยอาจทำให้สถิติเปลี่ยนมาก สรุปจากข้อมูลที่บันทึก ไม่ใช่คำแนะนำหรือการคาดการณ์\n\nคำถามทบทวน\n1. รายการไหนทำตามแผนได้ดี แม้ผลขาดทุน?\n2. ข้อผิดพลาดใดเกิดซ้ำ และครั้งหน้าจะป้องกันอย่างไร?\n3. จะทดลองปรับกติกาข้อใดในรอบถัดไป?`;
+}
+function renderAnalytics(){
+  const rows=analyticsRows(),s=AnalyticsCore.summarize(rows),[start,end]=AnalyticsCore.range(analyticsPeriod,analyticsAnchor);
+  $('#stats').innerHTML=metricCards(s);
+  const setups=[...new Set(AnalyticsCore.records(data).filter(shown).map(r=>r.setup))].sort();if(analyticsSetup!=='all'&&!setups.includes(analyticsSetup))setups.push(analyticsSetup);
+  $('#feature-page').innerHTML=`<article class="panel"><div class="analytics-controls">${options('ช่วงผลปิด','analytics-period',[['7D','7 วัน'],['30D','30 วัน'],['90D','90 วัน'],['YTD','ตั้งแต่ต้นปี'],['all','ทั้งหมดถึงวันที่เลือก'],['week','สัปดาห์ที่เลือก (จ.–อา.)'],['month','เดือนที่เลือก']],analyticsPeriod)}${field('วันที่อ้างอิง','analytics-anchor','date',analyticsAnchor,'required')}${options('ประเภทรายการ','analytics-type',[['Futures','Futures'],['Spot','รายการขาย Spot'],['all','Futures + ขาย Spot']],analyticsType)}${options('Setup','analytics-setup',[['all','ทุก Setup'],...setups],analyticsSetup)}${field('ค้นหาสินทรัพย์ / Tag / ข้อผิดพลาด','analytics-query','search',analyticsQuery,'maxlength="100"')}<button id="analytics-apply">แสดงผล</button></div><p>ช่วง ${start==='0001-01-01'?'เริ่มบันทึก':start} — ${end} · ใช้ตัวกรองพอร์ต กลยุทธ์ และสกุลเงินด้านบน · ไม่รวมแผนและรายการที่ยังเปิด</p></article><article class="panel"><h2>กำไรปิดสะสมและ Drawdown</h2>${analyticsChart(s.curve)}<div class="analytics-facts"><p>Max Drawdown สิ้นวัน<br><b>${metric(s.maxDrawdown)} ${currency}</b></p><p>กำไรเฉลี่ย / ขาดทุนเฉลี่ย<br><b>${metric(s.averageWin)} / ${metric(s.averageLoss)} ${currency}</b></p><p>อัตรากำไรเฉลี่ยต่อขาดทุนเฉลี่ย<br><b>${metric(s.payoff,'USD')}</b></p><p>รายการดีที่สุด / แย่ที่สุด<br><b>${metric(s.best)} / ${metric(s.worst)} ${currency}</b></p><p>วันมีผลเทรดชนะ / แพ้ต่อเนื่องสูงสุด<br><b>${s.bestWinStreak} / ${s.bestLossStreak} วัน</b></p><p>ถือ Futures เฉลี่ย<br><b>${metric(s.holdingDays,'USD')} วัน (${s.holdingCount} รายการ)</b></p></div><p>ระยะถือใช้วันที่ ไม่ใช่ชั่วโมง · วันที่ไม่มีผลปิดไม่นับในลำดับวันเทรด · ยังไม่มีประวัติทุนและ Equity รายวัน จึงไม่แสดง Drawdown % ของบัญชี</p></article><article class="panel"><h2>ผลตาม Setup</h2>${analyticsTable(AnalyticsCore.groups(rows,'setup'))}</article><article class="panel"><h2>สมุดข้อผิดพลาด</h2><p>หนึ่งรายการติดได้หลายป้าย ยอดแต่ละกลุ่มจึงนำมาบวกกันไม่ได้ และไม่ใช่มูลค่าความเสียหายที่พิสูจน์ว่าเกิดจากข้อผิดพลาดนั้น</p>${analyticsTable(AnalyticsCore.groups(rows,'mistakeTags',true))}</article><article class="panel"><h2>เปรียบเทียบสินทรัพย์ / ทิศทาง</h2>${analyticsTable(AnalyticsCore.groups(rows,r=>(r.symbol||r.asset)+' · '+(r.side||'ขาย Spot')))}</article><article class="panel"><h2>เปรียบเทียบกลยุทธ์ / Timeframe</h2>${analyticsTable(AnalyticsCore.groups(rows,r=>(r.strategy||'ทั่วไป')+' · '+r.timeframe))}</article><article class="panel"><h2>ผลตาม Tag</h2>${analyticsTable(AnalyticsCore.groups(rows,'tags',true))}</article><article class="panel"><div class="panel-title"><h2>สรุปทบทวนช่วงที่เลือก</h2><button id="download-review">ดาวน์โหลดสรุป</button></div><p>เลือก “สัปดาห์ที่เลือก” หรือ “เดือนที่เลือก” ด้านบนเพื่อสร้างสรุป · คำนวณจากบันทึก ไม่ใช้บริการ AI</p><pre class="review-summary">${esc(reviewText(rows,start,end))}</pre></article><article class="panel"><h2>รายการที่ใช้คำนวณ</h2><p>R แสดงเฉพาะรายการจริงที่บันทึกวงเงินเสี่ยงเริ่มต้นไว้แล้ว ค้นหา Tag/ข้อผิดพลาดด้านบนเพื่อดูรายการที่เกี่ยวข้อง</p>${rows.length?gridTable(['วันปิด','สินทรัพย์ / พอร์ต','Setup / Timeframe','ป้ายข้อผิดพลาด','กำไรสุทธิ','R'],rows.map(r=>`<tr><td>${esc(r.date)}</td><td>${esc(r.symbol||r.asset)}<br><small>${meta(r)}</small></td><td>${esc(r.setup)} / ${esc(r.timeframe)}</td><td>${esc(r.mistakeTags.join(', ')||'—')}</td><td>${signed(r.profit)}</td><td>${metric(r.rMultiple,'USD')}${r.rMultiple===null?'':' R'}</td></tr>`)):'<p class="empty">ไม่มีรายการในตัวกรองนี้</p>'}</article>`;
+  $('#analytics-apply').onclick=()=>{
+    const el=n=>document.querySelector(`[name="analytics-${n}"]`),anchor=el('anchor').value;
+    if(!LittleCore.day(anchor)){toast('กรุณาเลือกวันที่ให้ถูกต้อง');return}
+    analyticsPeriod=el('period').value;analyticsAnchor=anchor;analyticsType=el('type').value;analyticsSetup=el('setup').value;analyticsQuery=el('query').value;render();
+  };
+  $('#download-review').onclick=()=>{const blob=new Blob([reviewText(rows,start,end)],{type:'text/plain;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`LittleApp-review-${analyticsAnchor}-${currency}.txt`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+}
+render=function(){
+  beforeAnalyticsRender();
+  if(view==='analytics'){
+    renderAccounts();$('#feature-page').hidden=false;$('#overview').hidden=true;$('.records-panel').hidden=true;$('#stats').hidden=false;$('#quote-bar').hidden=true;$('#journal-status-label').hidden=true;$('#direction-label').hidden=true;$('#contract-label').hidden=true;renderAnalytics();
+  }
+};
+switchView=function(v){beforeAnalyticsSwitch(v);if(v==='analytics'){$('#breadcrumb').textContent='Analytics และทบทวน';$('#page-title').textContent='เรียนรู้จากผลเทรดของคุณ';$('#page-subtitle').textContent='สถิติ หน่วย R และบทเรียนจากข้อมูลจริง';$('#add').hidden=true}};
+const beforeAnalyticsReset=resetCloudUser;
+resetCloudUser=function(user){analyticsPeriod='30D';analyticsAnchor=date();analyticsType='Futures';analyticsSetup='all';analyticsQuery='';beforeAnalyticsReset(user)};
+// Resolve the current renderer at event time, including all feature extensions.
+for(const selector of ['#account-filter','#strategy-filter','#direction-filter','#contract-filter','#filter','#journal-status'])$(selector).onchange=()=>render();
+render();
