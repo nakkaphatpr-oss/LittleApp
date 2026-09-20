@@ -65,6 +65,18 @@ function journalValues(){const f=Object.fromEntries(new FormData($('#journal-for
 function journalSizing(f){return LittleCore.sizing({asset:f.asset,side:f.side,entry:Number(f.planEntry),stop:Number(f.stop),target:Number(f.target),multiplier:Number(f.planMultiplier),risk:Number(f.risk),feeReserve:Number(f.feeReserve),step:Number(f.step)})}
 function updateJournalForm(){
   const form=$('#journal-form'),state=form.elements.state.value,actual=['เปิดอยู่','ปิดแล้ว'].includes(state),linked=journalContext.planId||form.elements.linkId?.value;
+  const fixed=JournalCore.fixedMultiplier(data,form.elements.accountId.value,form.elements.asset.value);
+  for(const name of ['planMultiplier','multiplier']){
+    const input=form.elements[name];
+    if(fixed!==null){
+      if(!input.readOnly)input.dataset.manualMultiplier=input.dataset.visited?input.value:'1';
+      input.value=String(fixed);input.readOnly=true;input.title='Exness XAUUSD: 100 หน่วยต่อ Lot อัตโนมัติ';
+    }else{
+      if(input.readOnly)input.value=input.dataset.manualMultiplier||'1';
+      input.readOnly=false;input.title='';
+    }
+    input.dataset.visited='true';
+  }
   if(typeof QuoteCore!=='undefined'){
     const asset=form.elements.asset.value,select=form.elements.quoteFeed;
     if(select&&select.dataset.asset!==asset){
@@ -82,6 +94,7 @@ function updateJournalForm(){
   $('#apply-size').hidden=!actual;
   const unit=JournalCore.unit(form.elements.asset.value);
   $('#journal-units').textContent='วงเงินขาดทุน ค่าเผื่อ และค่าธรรมเนียมจริงใช้ '+unit+' · ราคาใช้ '+(form.elements.asset.value==='BTCUSDT'?'USDT':'USD')+' · ตัวคูณต้องตรงกับสัญญาของโบรกเกอร์';
+  if(fixed!==null)$('#journal-units').textContent+=' · Exness XAUUSD ใช้ตัวคูณ 100 อัตโนมัติทั้งแผนและรายการจริง';
   try{const s=journalSizing(journalValues());$('#journal-estimate').textContent=`ตามแผน: จำนวน ${qty(s.quantity)} · ขาดทุนประมาณ ${money(s.riskUsed,s.currency)} ${s.currency} · เป้ากำไร ${money(s.expected,s.currency)} ${s.currency} · R:R ${money(s.rr,'USD')}`;$('#apply-size').disabled=s.quantity<=0}catch(e){$('#journal-estimate').textContent=e.message;$('#apply-size').disabled=true}
 }
 $('#journal-form').oninput=updateJournalForm;

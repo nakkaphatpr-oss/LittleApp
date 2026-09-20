@@ -1,11 +1,14 @@
 const JournalCore=(()=>{
   const unit=asset=>asset==='BTCUSD'?'BTC':asset==='XAUUSD'?'USD':'USDT';
+  const fixedMultiplier=(d,accountId,asset)=>asset==='XAUUSD'&&(d.accounts?d.accounts.find(a=>a.id===accountId)?.broker==='Exness':accountId==='broker-0')?100:null;
   function items(d){const linked=new Set(d.trades.map(t=>t.planId).filter(Boolean));return [
     ...d.trades.map(t=>({kind:'trade',id:t.id,record:t,plan:(d.plans||[]).find(p=>p.id===t.planId),status:t.exit===null?'เปิดอยู่':'ปิดแล้ว'})),
     ...(d.plans||[]).filter(p=>!linked.has(p.id)).map(p=>({kind:'plan',id:p.id,record:{...p,currency:unit(p.asset)},plan:p,status:p.status==='ยกเลิก'?'ยกเลิก':'รอเข้า'}))
   ].sort((a,b)=>b.record.date.localeCompare(a.record.date))}
   function validLinks(d){const seen=new Set();return d.trades.every(t=>{if(t.planId==null)return true;const p=(d.plans||[]).find(p=>p.id===t.planId);if(!p||seen.has(t.planId)||p.status!=='เข้าแล้ว'||p.asset!==t.asset||p.side!==t.side||(p.accountId||'unassigned')!==(t.accountId||'unassigned'))return false;seen.add(t.planId);return true})}
   function build(d,f,context,makeId){
+    const fixed=fixedMultiplier(d,f.accountId,f.asset);
+    if(fixed!==null)f={...f,planMultiplier:fixed,multiplier:fixed};
     const actual=['เปิดอยู่','ปิดแล้ว'].includes(f.state),old=d.trades.find(t=>t.id===context.tradeId);
     if(!['รอเข้า','เปิดอยู่','ปิดแล้ว','ยกเลิก'].includes(f.state))throw Error('สถานะไม่ถูกต้อง');
     if(context.tradeId&&!old)throw Error('ไม่พบรายการเดิม กรุณาโหลดข้อมูลล่าสุด');
@@ -36,6 +39,6 @@ const JournalCore=(()=>{
     const plans=plan?(existing?(d.plans||[]).map(p=>p.id===plan.id?plan:p):[...(d.plans||[]),plan]):(d.plans||[]);
     const result={...d,trades,plans};if(!validLinks(result))throw Error('ข้อมูลแผนกับรายการจริงไม่สอดคล้องกัน');return result;
   }
-  return {unit,items,validLinks,build};
+  return {unit,items,validLinks,build,fixedMultiplier};
 })();
 if(typeof module!=='undefined')module.exports=JournalCore;
