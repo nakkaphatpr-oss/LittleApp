@@ -15,7 +15,9 @@ const JournalCore=(()=>{
     if(linkId&&!existing)throw Error('ไม่พบแผนเดิม');
     if(linkId&&d.trades.some(t=>t.planId===linkId&&t.id!==old?.id))throw Error('แผนนี้เชื่อมกับการเทรดอื่นแล้ว');
     if(existing&&!context.planId&&!old?.planId&&(existing.asset!==f.asset||existing.side!==f.side||(existing.accountId||'unassigned')!==f.accountId))throw Error('แผนที่เลือกต้องมีพอร์ต สัญญา และทิศทางตรงกับรายการจริง');
-    const common={accountId:f.accountId,strategy:f.strategy,asset:f.asset,side:f.side};
+    const quoteFeed=f.quoteFeed??old?.quoteFeed??existing?.quoteFeed;
+    if(quoteFeed!=null&&!['none',f.asset==='XAUUSD'?'gold':f.asset==='BTCUSDT'?'futures':'inverse'].includes(quoteFeed))throw Error('แหล่งราคาไม่ตรงกับสัญญา');
+    const common={accountId:f.accountId,strategy:f.strategy,asset:f.asset,side:f.side,...(quoteFeed!=null?{quoteFeed}:{})};
     const planning=!!existing||f.planning||!actual;
     let plan=existing;
     if(planning){

@@ -6,11 +6,12 @@ function journalRows(){return JournalCore.items(data).filter(i=>shown(i.record)&
 function renderJournal(){
   const rows=journalRows(),closed=rows.filter(i=>i.status==='ปิดแล้ว'),profit=closed.reduce((s,i)=>s+pnl(i.record),0);
   $('#stats').innerHTML=stat('รอเข้า',rows.filter(i=>i.status==='รอเข้า').length,'รายการ','ยังไม่นับเป็นการเทรดจริง','◎')+stat('เปิดอยู่',rows.filter(i=>i.status==='เปิดอยู่').length,'รายการ','ยืนยันการเปิดสถานะแล้ว','⇄')+stat('ปิดแล้ว',closed.length,'รายการ','บันทึกราคาออกแล้ว','✓')+stat('กำไรสุทธิ',money(profit),currency,'เฉพาะรายการปิดจริง','↗');
+  if(typeof QuoteUI!=='undefined')$('#stats').innerHTML+=QuoteUI.summary(rows);
   const wanted=$('#journal-status').value;
   const visible=rows.filter(i=>wanted==='ทั้งหมด'||i.status===wanted);
-  $('#records').innerHTML=visible.length?gridTable(['สถานะ / สินทรัพย์','พอร์ต / กลยุทธ์','แผนเข้า / SL / TP','เข้า → ออกจริง','จำนวนจริง / ตามแผน','กำไรสุทธิ',''],visible.map(i=>{
+  $('#records').innerHTML=visible.length?gridTable(['สถานะ / สินทรัพย์','พอร์ต / กลยุทธ์','แผนเข้า / SL / TP','เข้า → ออกจริง','จำนวนจริง / ตามแผน','ราคาปัจจุบันอ้างอิง','กำไร/ขาดทุนค้างอยู่','กำไรปิดแล้ว',''],visible.map(i=>{
     const r=i.record,p=i.plan,size=p?LittleCore.sizing(p):null,priceUnit=r.asset==='BTCUSDT'?'USDT':'USD';
-    return `<tr><td><span class="tag">${i.status}</span><br><b>${esc(r.asset)} · ${esc(r.side)}</b><br><small>${esc(r.date)}</small>${i.kind==='plan'&&r.status==='เข้าแล้ว'?'<br><small>แผนเดิมระบุเข้าแล้ว · ยังไม่เชื่อมผลจริง</small>':''}</td><td>${meta(r)}</td><td>${p?`${money(p.entry,priceUnit)} / ${money(p.stop,priceUnit)} / ${money(p.target,priceUnit)}`:'ยังไม่มีแผน'}</td><td>${i.kind==='trade'?`${money(r.entry,priceUnit)} → ${r.exit===null?'—':money(r.exit,priceUnit)}`:'ยังไม่เปิดจริง'}</td><td>${i.kind==='trade'?qty(r.quantity):'—'} / ${size?qty(size.quantity):'—'}<br><small>${i.kind==='trade'?'ตัวคูณจริง '+qty(r.multiplier):''}</small></td><td>${i.status==='ปิดแล้ว'?signed(pnl(r)):'—'}</td><td><button class="row-action" data-journal-kind="${i.kind}" data-journal-id="${esc(i.id)}">${i.status==='รอเข้า'?'ดูแผน / เปิดจริง':i.status==='เปิดอยู่'?'แก้ไข / ปิดรายการ':'ดู / แก้ไข'}</button><button class="row-action" data-journal-delete="${i.kind}" data-id="${esc(i.id)}">ลบ</button></td></tr>`;
+    return `<tr><td><span class="tag">${i.status}</span><br><b>${esc(r.asset)} · ${esc(r.side)}</b><br><small>${esc(r.date)}</small>${i.kind==='plan'&&r.status==='เข้าแล้ว'?'<br><small>แผนเดิมระบุเข้าแล้ว · ยังไม่เชื่อมผลจริง</small>':''}</td><td>${meta(r)}</td><td>${p?`${money(p.entry,priceUnit)} / ${money(p.stop,priceUnit)} / ${money(p.target,priceUnit)}`:'ยังไม่มีแผน'}</td><td>${i.kind==='trade'?`${money(r.entry,priceUnit)} → ${r.exit===null?'—':money(r.exit,priceUnit)}`:'ยังไม่เปิดจริง'}</td><td>${i.kind==='trade'?qty(r.quantity):'—'} / ${size?qty(size.quantity):'—'}<br><small>${i.kind==='trade'?'ตัวคูณจริง '+qty(r.multiplier):''}</small></td><td>${typeof QuoteUI!=='undefined'&&['รอเข้า','เปิดอยู่'].includes(i.status)?QuoteUI.cell(r):'—'}</td><td>${typeof QuoteUI!=='undefined'&&i.status==='เปิดอยู่'?QuoteUI.pnlCell(r):'—'}</td><td>${i.status==='ปิดแล้ว'?signed(pnl(r)):'—'}</td><td><button class="row-action" data-journal-kind="${i.kind}" data-journal-id="${esc(i.id)}">${i.status==='รอเข้า'?'ดูแผน / เปิดจริง':i.status==='เปิดอยู่'?'แก้ไข / ปิดรายการ':'ดู / แก้ไข'}</button><button class="row-action" data-journal-delete="${i.kind}" data-id="${esc(i.id)}">ลบ</button></td></tr>`;
   })):'<div class="empty">ยังไม่มีรายการในสถานะและตัวกรองนี้</div>';
   $$('[data-journal-kind]').forEach(b=>b.onclick=()=>openJournal(b.dataset.journalKind,b.dataset.journalId));
   $$('[data-journal-delete]').forEach(b=>b.onclick=async()=>{
@@ -26,7 +27,7 @@ render=function(){
   $('#journal-status-label').hidden=view!=='journal';
   if(view==='journal'){
     $('#table-title').textContent='วางแผน เปิดสถานะ และบันทึกผล';
-    $('#table-subtitle').textContent='รายการเดียวตั้งแต่รอเข้าจนปิดจริง · ยอดกำไรนับเฉพาะผลจริง';renderJournal();
+    $('#table-subtitle').textContent='กำไรปิดแล้วแยกจากกำไรค้างอยู่ · เลื่อนตารางแนวนอนเพื่อดูราคาปัจจุบันและผล';renderJournal();
   }
 };
 switchView=function(v){beforeJournalSwitch(v==='plans'?'journal':v);if(view==='journal'){$('#page-title').textContent='แผนและผลเทรด อยู่ในรายการเดียว';$('#page-subtitle').textContent='วางแผน → เปิดจริง → ปิดรายการ';$('#add').textContent='＋ เพิ่มรายการ'}};
@@ -48,6 +49,7 @@ function openJournal(kind,id){
   const r=t||p||{},state=t?(t.exit===null?'เปิดอยู่':'ปิดแล้ว'):p?.status==='ยกเลิก'?'ยกเลิก':'รอเข้า';
   const available=listOf('plans').filter(p=>!data.trades.some(t=>t.planId===p.id));
   $('#journal-fields').innerHTML=commonFields(r)+options('สถานะ','state',t?['เปิดอยู่','ปิดแล้ว']:['รอเข้า','เปิดอยู่','ปิดแล้ว','ยกเลิก'],state)+options('สัญญา','asset',['XAUUSD','BTCUSDT','BTCUSD'],r.asset||(currency==='BTC'?'BTCUSD':currency==='USDT'?'BTCUSDT':'XAUUSD'))+options('ทิศทาง','side',['Long','Short'],r.side||'Long');
+  if(typeof QuoteCore!=='undefined')$('#journal-fields').innerHTML+=options('แหล่งราคาประเมิน (ต้องตรงประเภทสัญญา)','quoteFeed',[['none','ไม่ใช้ราคาออนไลน์'],...Object.entries(QuoteCore.feeds).filter(([id,f])=>f.asset).map(([id,f])=>[id,f.label])],r.quoteFeed??QuoteCore.defaultFeed(r.asset||(currency==='BTC'?'BTCUSD':currency==='USDT'?'BTCUSDT':'XAUUSD')));
   $('#journal-link').innerHTML=t&&!p?options('เชื่อมแผนเดิมที่เคยกรอกแยกไว้ (ถ้ามี)','linkId',[['','ไม่เชื่อมแผนเดิม'],...available.map(p=>[p.id,p.date+' · '+p.asset+' '+p.side+' · '+accountName(p.accountId)])],''):'';
   $('#journal-planning').checked=!!p||!t;
   $('#journal-plan-fields').innerHTML=planInputs(p||{asset:r.asset,entry:t?.entry,multiplier:t?.multiplier});
@@ -63,6 +65,15 @@ function journalValues(){const f=Object.fromEntries(new FormData($('#journal-for
 function journalSizing(f){return LittleCore.sizing({asset:f.asset,side:f.side,entry:Number(f.planEntry),stop:Number(f.stop),target:Number(f.target),multiplier:Number(f.planMultiplier),risk:Number(f.risk),feeReserve:Number(f.feeReserve),step:Number(f.step)})}
 function updateJournalForm(){
   const form=$('#journal-form'),state=form.elements.state.value,actual=['เปิดอยู่','ปิดแล้ว'].includes(state),linked=journalContext.planId||form.elements.linkId?.value;
+  if(typeof QuoteCore!=='undefined'){
+    const asset=form.elements.asset.value,select=form.elements.quoteFeed;
+    if(select&&select.dataset.asset!==asset){
+      const current=select.dataset.asset?QuoteCore.defaultFeed(asset):select.value;
+      const id=asset==='XAUUSD'?'gold':asset==='BTCUSDT'?'futures':'inverse';
+      select.innerHTML=`<option value="none">ไม่ใช้ราคาออนไลน์</option><option value="${id}">${esc(QuoteCore.feeds[id].label)}${asset==='BTCUSD'?' · ยืนยันว่าถือสัญญานี้':''}</option>`;
+      select.value=['none',id].includes(current)?current:QuoteCore.defaultFeed(asset);select.dataset.asset=asset;
+    }
+  }
   if(!actual||linked)$('#journal-planning').checked=true;
   $('#journal-planning').disabled=!actual||!!linked;
   $('#journal-plan').disabled=!$('#journal-planning').checked;$('#journal-plan').hidden=!$('#journal-planning').checked;
