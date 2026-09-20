@@ -59,7 +59,7 @@ const LittleCore = (() => {
     try{ledger(d)}catch{return false}return true;
   }
   function realized(d){
-    return [...d.trades.filter(t=>t.exit!==null).map(t=>({...t,date:t.closeDate,profit:(t.asset==='BTCUSD'?1/t.entry-1/t.exit:t.exit-t.entry)*t.quantity*t.multiplier*(t.side==='Short'?-1:1)-t.fee,source:'Futures'})),...ledger(d).sales.map(t=>({...t,source:'Spot'}))];
+    return [...d.trades.filter(t=>t.exit!==null).map(t=>({...t,date:t.closeDate,profit:(t.asset==='BTCUSD'?1/t.entry-1/t.exit:t.exit-t.entry)*t.quantity*t.multiplier*(t.side==='Short'?-1:1)-t.fee-(t.funding||0),source:'Futures'})),...ledger(d).sales.map(t=>({...t,source:'Spot'}))];
   }
   return {key,ledger,sizing,validExtra,realized,day};
 })();

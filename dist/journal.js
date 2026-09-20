@@ -56,7 +56,7 @@ function openJournal(kind,id){
   $('#journal-plan-note').innerHTML=textarea('เหตุผลและแผนรับมือ','planNote',p?.note||'');
   $('#journal-actual-fields').innerHTML=field('วันที่เปิดจริง','date','date',t?.date||date(),'required')+numeric('ราคาเข้าจริง','entry',t?.entry||p?.entry||'',1e-10)+numeric('จำนวนที่เปิดจริง','quantity',t?.quantity||'',1e-10)+numeric('ตัวคูณจริง (ไม่ใช่ Leverage)','multiplier',t?.multiplier||p?.multiplier||1,1e-10)+numeric('ค่าธรรมเนียมจริงรวม','fee',t?.fee||0);
   $('#journal-close-fields').innerHTML=numeric('ราคาออกจริง','exit',t?.exit||'',1e-10)+field('วันที่ปิดจริง','closeDate','date',t?.closeDate||date(),'required');
-  $('#journal-note').innerHTML=textarea('บันทึกผลจริง','note',t?.note||'');
+  $('#journal-note').innerHTML=`<details ${t?.funding?'open':''}><summary>Funding (ถ้ามี)</summary>${field('Funding สะสม: จ่ายเป็นบวก / ได้รับเป็นลบ','funding','number',t?.funding||0,'step="any"')}<p>ใช้สกุลเงินผลกำไรของสัญญา · กรอกยอดสุทธิสะสม ไม่รวมซ้ำในค่าธรรมเนียม · รับรู้ในรายงานเมื่อปิดรายการ</p></details>`+textarea('บันทึกผลจริง','note',t?.note||'');
   $('#journal-error').textContent='';
   if($('#journal-form').elements.linkId)$('#journal-form').elements.linkId.onchange=e=>{const p=listOf('plans').find(p=>p.id===e.target.value);if(p)fillLinkedPlan(p);else updateJournalForm()};
   updateJournalForm();$('#journal-dialog').showModal();

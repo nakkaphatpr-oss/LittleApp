@@ -109,9 +109,11 @@ $('#feature-dialog').addEventListener('cancel',()=>{featureSession++;imageBusy=f
 $('#feature-form').onsubmit=async e=>{
   e.preventDefault();if(!featureAllowed())return;if(imageBusy){$('#feature-error').textContent='รอเตรียมภาพให้เสร็จก่อน';return}
   let r=Object.fromEntries(new FormData(e.target)),next;
+  if(featureMode==='review'&&r.tradeId){const linked=[...data.trades,...listOf('spotTransactions')].find(t=>t.id===r.tradeId);if(linked){r.accountId=linked.accountId||'unassigned';r.strategy=linked.strategy||'ทั่วไป'}}
   if(featureMode==='price'){next={...data,spotQuotes:[...listOf('spotQuotes').filter(q=>q.key!==featureId),{key:featureId,price:Number(r.price)}]}}
   else{
     const collection={spot:'spotTransactions',plan:'plans',review:'reviews'}[featureMode];
+    r={...(featureId?listOf(collection).find(v=>v.id===featureId):{}),...r};
     r.id=featureId||crypto.randomUUID();
     if(featureMode==='spot'){r.quantity=Number(r.quantity);r.price=Number(r.price);r.fee=Number(r.fee);r.date=r.time.slice(0,10);r.symbol=r.symbol.trim().toUpperCase()}
     if(featureMode==='plan'){r={...planFromForm(),id:r.id};try{LittleCore.sizing(r)}catch(error){$('#feature-error').textContent=error.message;return}}

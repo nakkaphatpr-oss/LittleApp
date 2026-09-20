@@ -30,9 +30,9 @@ const JournalCore=(()=>{
     }
     let trades=[...d.trades];
     if(actual){
-      const trade={...old,...common,id:old?.id||makeId(),date:f.date,entry:Number(f.entry),quantity:Number(f.quantity),multiplier:Number(f.multiplier),fee:Number(f.fee),currency:unit(f.asset),exit:f.state==='ปิดแล้ว'?Number(f.exit):null,closeDate:f.state==='ปิดแล้ว'?f.closeDate:(old?.closeDate||f.date),note:f.note||''};
+      const trade={...old,...common,id:old?.id||makeId(),date:f.date,entry:Number(f.entry),quantity:Number(f.quantity),multiplier:Number(f.multiplier),fee:Number(f.fee),funding:Number(f.funding??old?.funding??0),currency:unit(f.asset),exit:f.state==='ปิดแล้ว'?Number(f.exit):null,closeDate:f.state==='ปิดแล้ว'?f.closeDate:(old?.closeDate||f.date),note:f.note||''};
       if(!LittleCore.day(trade.date)||trade.exit!==null&&(!LittleCore.day(trade.closeDate)||trade.closeDate<trade.date))throw Error('ตรวจวันที่เปิดและปิดรายการ');
-      if(![trade.entry,trade.quantity,trade.multiplier].every(n=>Number.isFinite(n)&&n>0)||!Number.isFinite(trade.fee)||trade.fee<0||trade.exit!==null&&(!Number.isFinite(trade.exit)||trade.exit<=0))throw Error('กรอกราคา จำนวน ตัวคูณ และค่าธรรมเนียมจริงให้ถูกต้อง');
+      if(![trade.entry,trade.quantity,trade.multiplier].every(n=>Number.isFinite(n)&&n>0)||!Number.isFinite(trade.funding)||!Number.isFinite(trade.fee)||trade.fee<0||trade.exit!==null&&(!Number.isFinite(trade.exit)||trade.exit<=0))throw Error('กรอกราคา จำนวน ตัวคูณ และค่าธรรมเนียมจริงให้ถูกต้อง');
       if(plan)trade.planId=plan.id;
       trades=old?trades.map(t=>t.id===old.id?trade:t):[...trades,trade];
     }

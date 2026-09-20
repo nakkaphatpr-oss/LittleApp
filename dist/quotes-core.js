@@ -14,7 +14,7 @@ const QuoteCore = (() => {
   const stale = (q, now = Date.now()) => !valid(q, now) || !!q.error || now - q.timestamp > 180000 || now - q.fetchedAt > 180000;
   function unrealized(t, q) {
     if (t.exit !== null || !valid(q) || feed(t) !== q.id) return null;
-    const result = (t.asset === 'BTCUSD' ? 1 / t.entry - 1 / q.price : q.price - t.entry) * t.quantity * t.multiplier * (t.side === 'Short' ? -1 : 1) - t.fee;
+    const result = (t.asset === 'BTCUSD' ? 1 / t.entry - 1 / q.price : q.price - t.entry) * t.quantity * t.multiplier * (t.side === 'Short' ? -1 : 1) - t.fee - (t.funding || 0);
     return Number.isFinite(result) ? result : null;
   }
   function position(p, quotes, enabled) {

@@ -22,7 +22,7 @@ const QuoteUI = (() => {
     const open = rows.filter(i => i.kind === 'trade' && i.status === 'เปิดอยู่');
     const values = open.map(i => ({ q: quoteFor(i.record), value: QuoteCore.unrealized(i.record, quoteFor(i.record)) })).filter(v => v.value !== null);
     const old = values.some(v => QuoteCore.stale(v.q));
-    return stat('กำไร/ขาดทุนค้างอยู่', values.length ? money(values.reduce((s,v) => s + v.value, 0)) : '—', currency, `${values.length}/${open.length} รายการมีราคา${old ? ' · มีราคาเก่า' : ''} · หักค่าธรรมเนียมที่กรอก`, '≈');
+    return stat('กำไร/ขาดทุนค้างอยู่', values.length ? money(values.reduce((s,v) => s + v.value, 0)) : '—', currency, `${values.length}/${open.length} รายการมีราคา${old ? ' · มีราคาเก่า' : ''} · หักค่าธรรมเนียม/Funding ที่กรอก`, '≈');
   }
   const positions = ps => ps.map(p => QuoteCore.position(p, quotes, $('#quote-spot').checked));
   function wanted() {
