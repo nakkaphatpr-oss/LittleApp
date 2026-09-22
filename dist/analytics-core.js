@@ -32,9 +32,14 @@ const AnalyticsCore = (() => {
     const risk=Math.abs(t.asset==='BTCUSD'?1/t.entry-1/stop:t.entry-stop)*t.quantity*t.multiplier;
     if(!Number.isFinite(risk)||risk<=0)throw Error('คำนวณวงเงินเสี่ยงไม่ได้');return risk;
   }
-  function records(d) {
+  function records(d,basis='execution') {
     const original=new Map(d.trades.map(t=>[t.id,t]));
-    return LittleCore.realized(d).map(r=>{
+    let realized=LittleCore.realized(d);
+    if(basis==='deal'){
+      const groups=new Map();for(const r of realized){if(r.source!=='Futures')continue;const t=original.get(r.id);if(t.exit===null)continue;const prev=groups.get(r.id);groups.set(r.id,{...r,date:t.closeDate,profit:(prev?.profit||0)+r.profit})}
+      realized=[...groups.values(),...realized.filter(r=>r.source!=='Futures')];
+    }
+    return realized.map(r=>{
       const t=r.source==='Futures'?original.get(r.id):null;
       const multiple=t&&Number.isFinite(t.initialRisk)&&t.initialRisk>0?r.profit/t.initialRisk:null;
       return {...r,setup:r.setup||'ยังไม่ระบุ',timeframe:r.timeframe||'ยังไม่ระบุ',tags:r.tags||[],mistakeTags:r.mistakeTags||[],rMultiple:Number.isFinite(multiple)?multiple:null,holdingDays:t?dayNumber(r.date)-dayNumber(t.date):null};

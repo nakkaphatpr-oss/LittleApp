@@ -12,7 +12,7 @@ function accountField(value){return '<label>โบรกเกอร์ / พอ
 const money=(n,unit=currency)=>Number(n).toLocaleString('en-US',{minimumFractionDigits:unit==='BTC'?8:2,maximumFractionDigits:unit==='BTC'?8:2});
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
-const pnl=t=>t.exit==null?null:(t.asset==='BTCUSD'?(1/t.entry-1/t.exit):(t.exit-t.entry))*t.quantity*t.multiplier*(t.side==='Short'?-1:1)-t.fee-(t.funding||0);
+const pnl=t=>typeof FuturesCore!=='undefined'?FuturesCore.realized(t):t.exit==null?null:(t.asset==='BTCUSD'?(1/t.entry-1/t.exit):(t.exit-t.entry))*t.quantity*t.multiplier*(t.side==='Short'?-1:1)-t.fee-(t.funding||0);
 const strategyMatches=r=>$('#strategy-filter').value==='all'||(r.strategy||'ทั่วไป')===$('#strategy-filter').value;
 const tradeMatches=t=>strategyMatches(t)&&($('#direction-filter').value==='all'||t.side===$('#direction-filter').value)&&($('#contract-filter').value==='all'||(t.asset==='BTCUSD'?'Inverse':'Linear')===$('#contract-filter').value);
 
