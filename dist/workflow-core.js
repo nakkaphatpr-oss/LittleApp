@@ -1,5 +1,5 @@
 const WorkflowCore=(()=>{
- const keys=['accounts','trades','holdings','plans','reviews','spotTransactions','spotQuotes','cashFlows','equitySnapshots'];
+ const keys=['portfolioDefaults','accounts','trades','holdings','plans','reviews','spotTransactions','spotQuotes','cashFlows','equitySnapshots'];
  const identity=(key,r)=>key==='spotQuotes'?r.key:r.id;
  const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
  function audit(before,after,id,time){

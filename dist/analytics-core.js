@@ -36,21 +36,22 @@ const AnalyticsCore = (() => {
     const original=new Map(d.trades.map(t=>[t.id,t]));
     let realized=LittleCore.realized(d);
     if(basis==='deal'){
-      const groups=new Map();for(const r of realized){if(r.source!=='Futures')continue;const t=original.get(r.id);if(t.exit===null)continue;const prev=groups.get(r.id);groups.set(r.id,{...r,date:t.closeDate,profit:(prev?.profit||0)+r.profit})}
+      const groups=new Map();for(const r of realized){if(r.source!=='Futures')continue;const t=original.get(r.id);if(t.exit===null)continue;const prev=groups.get(r.id);groups.set(r.id,{...r,symbol:t.symbol,note:t.note,chargeType:null,costOnly:false,date:t.closeDate,profit:(prev?.profit||0)+r.profit})}
       realized=[...groups.values(),...realized.filter(r=>r.source!=='Futures')];
     }
     return realized.map(r=>{
       const t=r.source==='Futures'?original.get(r.id):null;
-      const multiple=t&&Number.isFinite(t.initialRisk)&&t.initialRisk>0?r.profit/t.initialRisk:null;
-      return {...r,setup:r.setup||'ยังไม่ระบุ',timeframe:r.timeframe||'ยังไม่ระบุ',tags:r.tags||[],mistakeTags:r.mistakeTags||[],rMultiple:Number.isFinite(multiple)?multiple:null,holdingDays:t?dayNumber(r.date)-dayNumber(t.date):null};
+      const multiple=t&&!r.costOnly&&Number.isFinite(t.initialRisk)&&t.initialRisk>0?r.profit/t.initialRisk:null;
+      return {...r,setup:r.setup||'ยังไม่ระบุ',timeframe:r.timeframe||'ยังไม่ระบุ',tags:r.tags||[],mistakeTags:r.mistakeTags||[],rMultiple:Number.isFinite(multiple)?multiple:null,holdingDays:t&&!r.costOnly?dayNumber(r.date)-dayNumber(t.date):null};
     }).sort((a,b)=>a.date.localeCompare(b.date)||String(a.time||'').localeCompare(String(b.time||''))||a.id.localeCompare(b.id));
   }
   function summarize(rows) {
     if(new Set(rows.map(r=>r.currency).filter(Boolean)).size>1)throw Error('เลือกสกุลเงินเดียวก่อนรวมสถิติ');
+    const ledgerRows=rows;rows=rows.filter(r=>!r.costOnly);
     const wins=rows.filter(r=>r.profit>0),losses=rows.filter(r=>r.profit<0),rs=rows.filter(r=>Number.isFinite(r.rMultiple)),holds=rows.filter(r=>Number.isFinite(r.holdingDays));
-    const sum=(list,key)=>list.reduce((s,r)=>s+r[key],0),net=sum(rows,'profit'),grossWin=sum(wins,'profit'),grossLoss=-sum(losses,'profit');
+    const sum=(list,key)=>list.reduce((s,r)=>s+r[key],0),net=sum(ledgerRows,'profit'),grossWin=sum(wins,'profit'),grossLoss=-sum(losses,'profit');
     // Drawdown and streaks use end-of-day results: no fabricated intraday order.
-    const daily=new Map();for(const r of rows)daily.set(r.date,(daily.get(r.date)||0)+r.profit);
+    const daily=new Map();for(const r of ledgerRows)daily.set(r.date,(daily.get(r.date)||0)+r.profit);
     let cumulative=0,peak=0,maxDrawdown=0,winStreak=0,lossStreak=0,bestWinStreak=0,bestLossStreak=0;
     const curve=[...daily].sort(([a],[b])=>a.localeCompare(b)).map(([date,profit])=>{
       cumulative+=profit;peak=Math.max(peak,cumulative);const drawdown=peak-cumulative;maxDrawdown=Math.max(maxDrawdown,drawdown);
@@ -58,7 +59,7 @@ const AnalyticsCore = (() => {
       return {date,profit,cumulative,drawdown};
     });
     const averageWin=wins.length?grossWin/wins.length:null,averageLoss=losses.length?grossLoss/losses.length:null;
-    return {count:rows.length,wins:wins.length,losses:losses.length,breakeven:rows.length-wins.length-losses.length,net,winRate:rows.length?wins.length/rows.length*100:null,profitFactor:grossLoss?grossWin/grossLoss:grossWin?Infinity:null,expectancy:rows.length?net/rows.length:null,averageWin,averageLoss,payoff:averageLoss&&averageWin!==null?averageWin/averageLoss:null,totalR:rs.length?sum(rs,'rMultiple'):null,averageR:rs.length?sum(rs,'rMultiple')/rs.length:null,rCount:rs.length,maxDrawdown,curve,bestWinStreak,bestLossStreak,best:rows.length?Math.max(...rows.map(r=>r.profit)):null,worst:rows.length?Math.min(...rows.map(r=>r.profit)):null,holdingDays:holds.length?sum(holds,'holdingDays')/holds.length:null,holdingCount:holds.length};
+    return {count:rows.length,wins:wins.length,losses:losses.length,breakeven:rows.length-wins.length-losses.length,net,winRate:rows.length?wins.length/rows.length*100:null,profitFactor:grossLoss?grossWin/grossLoss:grossWin?Infinity:null,expectancy:rows.length?sum(rows,'profit')/rows.length:null,averageWin,averageLoss,payoff:averageLoss&&averageWin!==null?averageWin/averageLoss:null,totalR:rs.length?sum(rs,'rMultiple'):null,averageR:rs.length?sum(rs,'rMultiple')/rs.length:null,rCount:rs.length,maxDrawdown,curve,bestWinStreak,bestLossStreak,best:rows.length?Math.max(...rows.map(r=>r.profit)):null,worst:rows.length?Math.min(...rows.map(r=>r.profit)):null,holdingDays:holds.length?sum(holds,'holdingDays')/holds.length:null,holdingCount:holds.length};
   }
   function groups(rows,key,multi=false) {
     const map=new Map();for(const r of rows){const names=multi?r[key]:[typeof key==='function'?key(r):r[key]||'ยังไม่ระบุ'];for(const label of new Set(names)){if(!map.has(label))map.set(label,[]);map.get(label).push(r)}}

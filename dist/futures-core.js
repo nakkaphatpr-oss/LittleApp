@@ -22,11 +22,12 @@ const FuturesCore=(()=>{
   }
   return {quantity,entry,cost,rows};
  }
- function events(t){
+ function closeEvents(t){
   if(t.baseOpen)return replay(t).rows;
   if(!t.closes?.length)return t.exit===null?[]:[{...t,date:t.closeDate,profit:gross(t,t.exit,t.quantity)-t.fee-(t.funding||0),source:'Futures'}];
   return [...t.closes].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id)).map(c=>({...t,id:t.id,eventId:c.id,date:c.date,closeDate:c.date,exit:c.price,closedQuantity:c.quantity,profit:gross(t,c.price,c.quantity)-(t.fee+(t.funding||0))*c.quantity/t.quantity-c.fee-c.funding,source:'Futures'}));
  }
+ function events(t){return [...closeEvents(t),...(t.charges||[]).map(c=>({...t,eventId:c.id,date:c.time.slice(0,10),time:c.time,profit:-c.amount,source:'Futures',costOnly:true,chargeType:c.type,symbol:c.type+' · '+t.asset,note:c.note,exit:null}))]}
  function realized(t){const rows=events(t);return rows.length?rows.reduce((s,r)=>s+r.profit,0):null}
  function unrealized(t,price){const left=remaining(t);if(left<=0)return null;const s=t.baseOpen?replay(t):null;const result=s?gross({...t,entry:s.entry},price,s.quantity)-s.cost:gross(t,price,left)-(t.fee+(t.funding||0))*left/t.quantity;return Number.isFinite(result)?result:null}
  function sync(t){
@@ -37,6 +38,10 @@ const FuturesCore=(()=>{
  }
  function valid(t){
   try{
+  if(t.charges!=null){
+   if(!Array.isArray(t.charges)||t.charges.length>1000||t.charges.length&&((t.funding||0)!==0||[...(t.entries||[]),...(t.closes||[])].some(r=>r.funding!==0)))return false;
+   const ids=new Set();for(const c of t.charges){if(!c||typeof c.id!=='string'||!c.id||ids.has(c.id)||!['Funding','Swap'].includes(c.type)||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(c.time)||!day(c.time.slice(0,10))||+c.time.slice(11,13)>23||+c.time.slice(14,16)>59||+(c.time.slice(17)||0)>59||c.time.slice(0,10)<t.date||t.exit!==null&&c.time.slice(0,10)>t.closeDate||!Number.isFinite(c.amount)||c.amount===0||typeof c.note!=='string'||c.note.length>3000)return false;ids.add(c.id)}
+  }
   if(t.baseOpen!=null||t.entries!=null){
    if(!t.baseOpen||!finite(t.baseOpen.quantity,Number.MIN_VALUE)||!finite(t.baseOpen.entry,Number.MIN_VALUE)||!Array.isArray(t.entries)||t.entries.length>1000||!Array.isArray(t.closes)||!t.closes.length&&t.exit!==null)return false;
    const ids=new Set(),orders=new Set();for(const r of [...t.entries,...(t.closes||[])]){if(!r||typeof r.id!=='string'||!r.id||r.id.length>100||ids.has(r.id)||!Number.isSafeInteger(r.order)||r.order<1||orders.has(r.order)||!day(r.date)||r.date<t.date||!finite(r.quantity,Number.MIN_VALUE)||!finite(r.price,Number.MIN_VALUE)||!finite(r.fee)||!Number.isFinite(r.funding)||typeof r.note!=='string'||r.note.length>3000)return false;ids.add(r.id);orders.add(r.order)}
@@ -71,6 +76,6 @@ const FuturesCore=(()=>{
   const quantity=baseOpen.quantity+entries.reduce((s,r)=>s+r.quantity,0),entry=t.asset==='BTCUSD'?quantity/(baseOpen.quantity/baseOpen.entry+entries.reduce((s,r)=>s+r.quantity/r.price,0)):(baseOpen.quantity*baseOpen.entry+entries.reduce((s,r)=>s+r.quantity*r.price,0))/quantity;
   const next=sync({...t,baseOpen,entries,closes,quantity,entry});if(!valid(next))throw Error('ตรวจวันที่ จำนวน ราคา และลำดับไม้เข้า/ปิด');return next;
  }
- return {remaining,events,realized,unrealized,valid,change,sync,closedQuantity,addEntry,replay};
+ return {remaining,events,closeEvents,realized,unrealized,valid,change,sync,closedQuantity,addEntry,replay};
 })();
 if(typeof module!=='undefined')module.exports=FuturesCore;

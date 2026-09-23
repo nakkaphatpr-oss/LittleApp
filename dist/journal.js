@@ -5,11 +5,11 @@ valid=function(d){return beforeJournalValid(d)&&JournalCore.validLinks(d)};
 function journalRows(){return JournalCore.items(data).filter(i=>shown(i.record)&&tradeMatches(i.record)&&($('#filter').value==='all'||i.record.asset===$('#filter').value))}
 function renderJournal(){
   const rows=journalRows(),closed=rows.filter(i=>i.status==='ปิดแล้ว'),profit=rows.filter(i=>i.kind==='trade').reduce((s,i)=>s+(pnl(i.record)||0),0);
-  $('#stats').innerHTML=stat('รอเข้า',rows.filter(i=>i.status==='รอเข้า').length,'รายการ','ยังไม่นับเป็นการเทรดจริง','◎')+stat('เปิดอยู่',rows.filter(i=>i.status==='เปิดอยู่').length,'รายการ','ยืนยันการเปิดสถานะแล้ว','⇄')+stat('ปิดแล้ว',closed.length,'รายการ','บันทึกราคาออกแล้ว','✓')+stat('กำไรสุทธิ',money(profit),currency,'รวมกำไรจากไม้ที่ปิดบางส่วน','↗');
+  $('#stats').innerHTML=stat('รอเข้า',rows.filter(i=>i.status==='รอเข้า').length,'รายการ','ยังไม่นับเป็นการเทรดจริง','◎')+stat('เปิดอยู่',rows.filter(i=>i.status==='เปิดอยู่').length,'รายการ','ยืนยันการเปิดสถานะแล้ว','⇄')+stat('ปิดแล้ว',closed.length,'รายการ','บันทึกราคาออกแล้ว','✓')+stat('กำไรสุทธิ',money(profit),currency,'รวมไม้ปิดและ Funding/Swap รายวัน','↗');
   if(typeof QuoteUI!=='undefined')$('#stats').innerHTML+=QuoteUI.summary(rows);
   const wanted=$('#journal-status').value;
   const visible=rows.filter(i=>wanted==='ทั้งหมด'||i.status===wanted);
-  $('#records').innerHTML=visible.length?gridTable(['สถานะ / สินทรัพย์','พอร์ต / กลยุทธ์','แผนเข้า / SL / TP','เข้า → ออกจริง','จำนวนจริง / ตามแผน','ราคาปัจจุบันอ้างอิง','กำไร/ขาดทุนค้างอยู่','กำไรปิดแล้ว','ผลเป็น R',''],visible.map(i=>{
+  $('#records').innerHTML=visible.length?gridTable(['สถานะ / สินทรัพย์','พอร์ต / กลยุทธ์','แผนเข้า / SL / TP','เข้า → ออกจริง','จำนวนจริง / ตามแผน','ราคาปัจจุบันอ้างอิง','กำไร/ขาดทุนค้างอยู่','ผลรับรู้แล้ว','ผลเป็น R',''],visible.map(i=>{
     const r=i.record,p=i.plan,size=p?LittleCore.sizing(p):null,priceUnit=r.asset==='BTCUSDT'?'USDT':'USD';
     return `<tr><td><span class="tag">${i.status}${r.exit===null&&r.closes?.length?' · ปิดบางส่วน':''}</span><br><b>${esc(r.asset)} · ${esc(r.side)}</b><br><small>${esc(r.date)}</small>${i.kind==='plan'&&r.status==='เข้าแล้ว'?'<br><small>แผนเดิมระบุเข้าแล้ว · ยังไม่เชื่อมผลจริง</small>':''}</td><td>${meta(r)}</td><td>${p?`${money(p.entry,priceUnit)} / ${money(p.stop,priceUnit)} / ${money(p.target,priceUnit)}`:'ยังไม่มีแผน'}</td><td>${i.kind==='trade'?`${money(r.baseOpen&&r.exit===null?FuturesCore.replay(r).entry:r.entry,priceUnit)}${r.baseOpen&&r.exit===null?'<br><small>เฉลี่ยส่วนที่เหลือ</small>':''} → ${r.exit===null?'—':money(r.exit,priceUnit)}`:'ยังไม่เปิดจริง'}</td><td>${i.kind==='trade'?(r.closes?.length?qty(FuturesCore.remaining(r))+' เหลือ / '+qty(r.quantity)+' เปิด':qty(r.quantity)):'—'} / ${size?qty(size.quantity):'—'}<br><small>${i.kind==='trade'?'ตัวคูณจริง '+qty(r.multiplier):''}</small></td><td>${typeof QuoteUI!=='undefined'&&['รอเข้า','เปิดอยู่'].includes(i.status)?QuoteUI.cell(r):'—'}</td><td>${typeof QuoteUI!=='undefined'&&i.status==='เปิดอยู่'?QuoteUI.pnlCell(r):'—'}</td><td>${i.kind==='trade'&&pnl(r)!==null?signed(pnl(r)):'—'}</td><td>${i.kind==='trade'&&pnl(r)!==null&&Number.isFinite(r.initialRisk)&&r.initialRisk>0?money(pnl(r)/r.initialRisk,'USD')+' R':'—'}</td><td><button class="row-action" data-journal-kind="${i.kind}" data-journal-id="${esc(i.id)}">${i.status==='รอเข้า'?'ดูแผน / เปิดจริง':i.status==='เปิดอยู่'?'แก้ไข / ปิดรายการ':'ดู / แก้ไข'}</button><button class="row-action" data-journal-delete="${i.kind}" data-id="${esc(i.id)}">ลบ</button></td></tr>`;
   })):'<div class="empty">ยังไม่มีรายการในสถานะและตัวกรองนี้</div>';
@@ -27,7 +27,7 @@ render=function(){
   $('#journal-status-label').hidden=view!=='journal';
   if(view==='journal'){
     $('#table-title').textContent='วางแผน เปิดสถานะ และบันทึกผล';
-    $('#table-subtitle').textContent='กำไรปิดแล้วแยกจากกำไรค้างอยู่ · เลื่อนตารางแนวนอนเพื่อดูราคาปัจจุบันและผล';renderJournal();
+    $('#table-subtitle').textContent='ผลรับรู้แล้วแยกจากกำไรค้างอยู่ · เลื่อนตารางแนวนอนเพื่อดูราคาปัจจุบันและผล';renderJournal();
   }
 };
 switchView=function(v){beforeJournalSwitch(v==='plans'?'journal':v);if(view==='journal'){$('#page-title').textContent='แผนและผลเทรด อยู่ในรายการเดียว';$('#page-subtitle').textContent='วางแผน → เปิดจริง → ปิดรายการ';$('#add').textContent='＋ เพิ่มรายการ'}};
