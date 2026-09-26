@@ -1,4 +1,6 @@
-# LittleApp v3.8
+# LittleApp v3.9
+
+**v3.9:** จัดพอร์ตเป็น Store of wealth / Investment / Speculate / Gambling พร้อมตัวกรองและสรุปตาม Layer ในหน้าเดิม อ่าน [คู่มือ v3.9](UPDATE-V39.md)
 
 **v3.8:** จัดการพอร์ตได้ยืดหยุ่นขึ้น แก้ชื่อพอร์ต/Broker พิมพ์ Broker ใหม่ ลบพอร์ตว่าง หรือย้ายข้อมูลก่อนลบ พร้อมกู้คืน อ่าน [คู่มือ v3.8](UPDATE-V38.md)
 

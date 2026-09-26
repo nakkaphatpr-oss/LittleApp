@@ -2,12 +2,12 @@ const AccountsCore=(()=>{
  const collections=['trades','holdings','plans','reviews','spotTransactions','cashFlows','equitySnapshots'];
  const normalize=s=>String(s).trim().replace(/\s+/g,' ');
  function usage(d,id){return collections.map(key=>({key,count:(d[key]||[]).filter(r=>r.accountId===id).length})).filter(r=>r.count)}
- function edit(d,id,name,broker,makeId){
+ function edit(d,id,name,broker,makeId,layer){
   name=normalize(name);broker=normalize(broker);const known=['Exness','SCBX','Bualuang','Deribit','Phemex','อื่น ๆ'];broker=known.find(b=>b.toLowerCase()===broker.toLowerCase())||broker;
   const list=d.accounts||[];if(!name||name.length>60||!broker||broker.length>60)throw Error('กรอกชื่อพอร์ตและ Broker อย่างละไม่เกิน 60 ตัวอักษร');
   if(id!=='new'&&!list.some(a=>a.id===id))throw Error('ไม่พบพอร์ตเดิม');
   if(list.some(a=>a.id!==id&&a.name.toLowerCase()===name.toLowerCase()&&a.broker.toLowerCase()===broker.toLowerCase()))throw Error('มีชื่อพอร์ตนี้ใน Broker เดียวกันแล้ว');
-  const item={...(list.find(a=>a.id===id)||{}),id:id==='new'?makeId():id,name,broker};
+  const item={...(list.find(a=>a.id===id)||{}),...(layer!==undefined?{layer}:{}),id:id==='new'?makeId():id,name,broker};
   // A broker correction must not silently reinterpret historical contract sizes.
   if(broker==='Exness'&&[...(d.trades||[]),...(d.plans||[]),...(d.portfolioDefaults||[])].some(r=>r.accountId===id&&r.asset==='XAUUSD'&&r.multiplier!==100))throw Error('พอร์ตมี XAUUSD ที่ตัวคูณไม่ใช่ 100 กรุณาตรวจแก้ข้อมูลก่อนเปลี่ยนเป็น Exness');
   return {...d,accounts:id==='new'?[...list,item]:list.map(a=>a.id===id?item:a)};
