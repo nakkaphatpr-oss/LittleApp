@@ -31,6 +31,15 @@ const LittleCore = (() => {
     }
     return {positions:[...positions.values()],sales,events};
   }
+  // Price-only reward/risk, independent of budget, size and fees.
+  function rewardRisk(p){
+    if(!['Long','Short'].includes(p.side)||!['XAUUSD','BTCUSDT','BTCUSD'].includes(p.asset))throw Error('สัญญาไม่ถูกต้อง');
+    if(!['entry','stop','target'].every(k=>finite(p[k],Number.MIN_VALUE)))throw Error('กรอกราคาเข้า, SL และ TP มากกว่าศูนย์เพื่อดู R:R');
+    if(p.side==='Long'&&!(p.stop<p.entry&&p.target>p.entry)||p.side==='Short'&&!(p.stop>p.entry&&p.target<p.entry))throw Error('Long: SL < เข้า < TP; Short: TP < เข้า < SL');
+    const inv=p.asset==='BTCUSD',loss=Math.abs(inv?1/p.entry-1/p.stop:p.entry-p.stop),reward=Math.abs(inv?1/p.entry-1/p.target:p.target-p.entry),rr=reward/loss;
+    if(!Number.isFinite(rr)||loss<=0)throw Error('ไม่สามารถคำนวณ R:R จากราคานี้ได้');
+    return rr;
+  }
   function sizing(p){
     for(const k of ['entry','stop','target','multiplier','risk','step'])if(!finite(p[k],Number.MIN_VALUE))throw Error('กรอกตัวเลขมากกว่าศูนย์ให้ครบ');
     if(!finite(p.feeReserve)||p.feeReserve>=p.risk)throw Error('เงินเผื่อค่าธรรมเนียมต้องน้อยกว่าวงเงินขาดทุน');
@@ -61,6 +70,6 @@ const LittleCore = (() => {
   function realized(d){
     return [...(typeof FuturesCore!=='undefined'?d.trades.flatMap(FuturesCore.events):d.trades.filter(t=>t.exit!==null).map(t=>({...t,date:t.closeDate,profit:(t.asset==='BTCUSD'?1/t.entry-1/t.exit:t.exit-t.entry)*t.quantity*t.multiplier*(t.side==='Short'?-1:1)-t.fee-(t.funding||0),source:'Futures'}))),...ledger(d).sales.map(t=>({...t,source:'Spot'}))];
   }
-  return {key,ledger,sizing,validExtra,realized,day};
+    return {key,ledger,sizing,rewardRisk,validExtra,realized,day};
 })();
 if(typeof module!=='undefined')module.exports=LittleCore;
