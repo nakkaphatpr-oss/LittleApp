@@ -1,5 +1,5 @@
 const AccountsCore=(()=>{
- const collections=['trades','holdings','plans','reviews','spotTransactions','cashFlows','equitySnapshots'];
+ const collections=['financeAccounts','financeAdjustments','trades','holdings','plans','reviews','spotTransactions','cashFlows','equitySnapshots'];
  const normalize=s=>String(s).trim().replace(/\s+/g,' ');
  function usage(d,id){return collections.map(key=>({key,count:(d[key]||[]).filter(r=>r.accountId===id).length})).filter(r=>r.count)}
  function edit(d,id,name,broker,makeId,layer){
@@ -17,6 +17,8 @@ const AccountsCore=(()=>{
   const used=usage(d,id).reduce((s,r)=>s+r.count,0);if(used&&!target)throw Error('พอร์ตมีข้อมูล เลือกพอร์ตปลายทางเพื่อย้ายก่อนลบ');
   if(target&&(target===id||!d.accounts.some(a=>a.id===target)))throw Error('เลือกพอร์ตปลายทางอื่นที่มีอยู่จริง');
   if(target){
+   if((d.financeAccounts||[]).some(r=>r.accountId===id||r.accountId===target)&&usage(d,id).length&&usage(d,target).length)throw Error('พอร์ตมีฐานเงินสด/วิธีนับมูลค่า กรุณาย้ายเข้าพอร์ตว่างเพื่อไม่ผสมยอดตั้งต้น');
+   if((d.financeAccounts||[]).some(a=>a.accountId===id&&(d.financeAccounts||[]).some(b=>b.accountId===target&&a.currency===b.currency)))throw Error('ปลายทางมีการตั้งเงินสดสกุลเดียวกันแล้ว เลือกพอร์ตว่าง');
    if(d.accounts.find(a=>a.id===target).broker==='Exness'&&[...(d.trades||[]),...(d.plans||[])].some(r=>r.accountId===id&&r.asset==='XAUUSD'&&r.multiplier!==100))throw Error('XAUUSD ต้นทางมีตัวคูณไม่ใช่ 100 ไม่สามารถย้ายเข้า Exness');
    const positionKey=r=>LittleCore.key({...r,accountId:target}),spot=[...(d.holdings||[]),...(d.spotTransactions||[])],destination=new Set(spot.filter(r=>r.accountId===target).map(positionKey));
    if(spot.some(r=>r.accountId===id&&destination.has(positionKey(r))))throw Error('มีสินทรัพย์สะสมซ้ำกับปลายทาง การรวมจะเปลี่ยนต้นทุนเฉลี่ย กรุณาเลือกพอร์ตว่าง');
