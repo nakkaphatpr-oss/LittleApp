@@ -1,12 +1,12 @@
 let analyticsBasis="deal";
 let analyticsPeriod='30D',analyticsAnchor=date(),analyticsType='Futures',analyticsSetup='all',analyticsQuery='';
 const beforeAnalyticsRender=render,beforeAnalyticsSwitch=switchView,beforeAnalyticsValid=valid,beforeAnalyticsOpen=openJournal,beforeAnalyticsBuild=JournalCore.build;
-valid=function(d){return beforeAnalyticsValid(d)&&[...d.trades,...listOfData(d,'plans'),...listOfData(d,'spotTransactions')].every(AnalyticsCore.metadata)};
+valid=function(d){return beforeAnalyticsValid(d)&&[...d.trades,...listOfData(d,'plans'),...listOfData(d,'spotTransactions')].every(r=>AnalyticsCore.metadata(r)&&EntryCore.valid(r))};
 function listOfData(d,key){return d[key]||[]}
 JournalCore.build=function(d,f,context,id){
   const next=beforeAnalyticsBuild(d,f,context,id);
-  if(!Object.hasOwn(f,'setup'))return next;
-  const extra=AnalyticsCore.fields(f);
+  if(!Object.hasOwn(f,'heroPlay')&&!Object.hasOwn(f,'setup'))return next;
+  const extra=Object.hasOwn(f,'heroPlay')?EntryCore.fields(f):AnalyticsCore.fields(f);
   const actual=['เปิดอยู่','ปิดแล้ว'].includes(f.state);
   const trade=actual?next.trades.find(t=>t.id===context.tradeId)||next.trades.find(t=>!d.trades.some(old=>old.id===t.id)):null;
   const planId=trade?.planId||context.planId;
@@ -18,16 +18,11 @@ JournalCore.build=function(d,f,context,id){
 openJournal=function(kind,id){
   beforeAnalyticsOpen(kind,id);if(!$('#journal-dialog').open)return;
   const t=kind==='trade'?data.trades.find(t=>t.id===id):null,p=listOf('plans').find(p=>p.id===(kind==='plan'?id:t?.planId)),r={...p,...t};
-  $('#analytics-trade-fields').innerHTML=`<details ${r.setup||r.tags?.length||r.mistakeTags?.length||r.initialRisk?'open':''}><summary>Setup, ป้ายกำกับ และความเสี่ยงเริ่มต้น (R)</summary><div class="form-grid">${field('Setup เช่น Trend Pullback','setup','text',r.setup||'','maxlength="80" list="setup-suggestions"')}${field('Timeframe เช่น M15, H1, D1','timeframe','text',r.timeframe||'','maxlength="20"')}${field('Tag คั่นด้วยจุลภาค เช่น NFP, London','tags','text',(r.tags||[]).join(', '),'maxlength="820"')}${field('ข้อผิดพลาด คั่นด้วยจุลภาค เช่น FOMO, Move SL','mistakeTags','text',(r.mistakeTags||[]).join(', '),'maxlength="820"')}</div><datalist id="setup-suggestions">${[...new Set([...data.trades,...listOf('plans')].map(r=>r.setup).filter(Boolean))].map(s=>`<option value="${esc(s)}"></option>`).join('')}</datalist><div class="form-grid">${field('1R = วงเงินเสี่ยงเริ่มต้นของรายการจริง','initialRisk','number',t?.initialRisk??'','min="0.000000000001" step="any"')}</div><button type="button" id="derive-risk" class="text-button">คำนวณ 1R จากราคาเข้า จำนวนจริง และ SL ตามแผน</button><p>ใช้สกุลเงินผลกำไรของสัญญา (BTC สำหรับ Inverse) · R = กำไรสุทธิ ÷ วงเงินเสี่ยงเริ่มต้น · ไม่ใช่ Leverage หรือวงเงินสูงสุดตามแผน ค่าที่คำนวณจาก SL ไม่รวมค่าธรรมเนียม และจะไม่เปลี่ยนตาม SL ภายหลัง เว้นแต่คุณแก้เอง</p><p id="risk-feedback" role="status"></p></details>`;
-  $('#derive-risk').onclick=()=>{try{const f=journalValues();if(!['เปิดอยู่','ปิดแล้ว'].includes(f.state)||!f.planning)throw Error('ต้องมีข้อมูลเปิดจริงและแผน SL ก่อน');const risk=AnalyticsCore.stopRisk({asset:f.asset,side:f.side,entry:Number(f.entry),quantity:Number(f.quantity),multiplier:Number(f.multiplier)},Number(f.stop));$('#journal-form').elements.initialRisk.value=String(risk);$('#risk-feedback').textContent='คำนวณแล้ว ตรวจวงเงินเสี่ยงเริ่มต้นก่อนบันทึก'}catch(e){$('#risk-feedback').textContent=e.message}};
-  $('#journal-form').elements.initialRisk.dataset.asset=$('#journal-form').elements.asset.value;
-  $('#risk-feedback').textContent='วงเงิน 1R ใช้ '+JournalCore.unit($('#journal-form').elements.asset.value);
+  $('#analytics-trade-fields').innerHTML='<details open><summary>เงื่อนไขการเข้า Position</summary><div class="form-grid">'+options('เล่นบน Timeframe พระเอก','heroPlay',[['','ยังไม่ระบุ'],['Yes','Yes'],['No','No']],r.heroPlay||'')+options('Timeframe ที่เป็นพระเอก','heroFrame',[['','เลือก Timeframe'],...EntryCore.frames.map(v=>[v,v])],r.heroFrame||'')+options('อยู่ในโซน ovb หรือ ovs','heroZone',[['','ยังไม่ระบุ'],['Yes','Yes'],['No','No']],r.heroZone||'')+options('การเข้า position','heroEntry',[['','ยังไม่ระบุ'],...EntryCore.entries.map(v=>[v,v])],r.heroEntry||'')+'</div></details>';
+  updateHeroFrame();
 };
-$('#journal-form').addEventListener('change',e=>{
-  if(e.target.name!=='asset')return;
-  const input=$('#journal-form').elements.initialRisk;if(!input)return;
-  if(input.dataset.asset!==e.target.value){input.value='';input.dataset.asset=e.target.value;$('#risk-feedback').textContent='เปลี่ยนสัญญาแล้ว กรุณาระบุ 1R ใหม่ในหน่วย '+JournalCore.unit(e.target.value)}
-});
+function updateHeroFrame(){const f=$('#journal-form').elements;if(!f.heroPlay)return;f.heroFrame.disabled=f.heroPlay.value!=='Yes';f.heroFrame.required=f.heroPlay.value==='Yes';if(f.heroFrame.disabled)f.heroFrame.value=''}
+$('#journal-form').addEventListener('change',e=>{if(e.target.name==='heroPlay')updateHeroFrame();if(e.target.name==='linkId'){const p=listOf('plans').find(p=>p.id===e.target.value);if(p){for(const k of EntryCore.keys)$('#journal-form').elements[k].value=p[k]||'';updateHeroFrame()}}});
 function analyticsRows(){
   const [start,end]=AnalyticsCore.range(analyticsPeriod,analyticsAnchor),query=analyticsQuery.trim().toLocaleLowerCase();
   return AnalyticsCore.records(data,insightTab==='calendar'?'execution':analyticsBasis).filter(r=>shown(r)&&r.date>=start&&r.date<=end&&(analyticsType==='all'||r.source===analyticsType)&&(analyticsSetup==='all'||r.setup===analyticsSetup)&&(!query||[r.symbol||r.asset,r.setup,r.timeframe,r.note,...r.tags,...r.mistakeTags].join(' ').toLocaleLowerCase().includes(query)));

@@ -1,3 +1,7 @@
+# LittleApp v3.13
+
+เงื่อนไขเข้า Position 4 ช่อง และ Win Rate แยกเงื่อนไข — ดู UPDATE-V313.md
+
 # LittleApp v3.12
 
 เพิ่มเงินสดคงเหลือ มูลค่ารวมเป็นเงินบาท และเป้าหมาย 4 Layer — เริ่มต้นดู UPDATE-V312.md
